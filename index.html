@@ -28,6 +28,38 @@
       </div>
 
       <div class="app-header-controls">
+
+        <!-- ---- List switcher ---- -->
+        <div class="list-switcher" role="group" aria-label="Lists">
+          <label class="visually-hidden" for="list-select">Active list</label>
+          <select id="list-select" class="list-select" aria-label="Active list"></select>
+
+          <button
+            type="button"
+            id="list-new-button"
+            class="icon-button"
+            aria-label="Create a new list"
+            title="New list"
+          >＋</button>
+
+          <button
+            type="button"
+            id="list-rename-button"
+            class="icon-button"
+            aria-label="Rename the active list"
+            title="Rename list"
+          >✎</button>
+
+          <button
+            type="button"
+            id="list-delete-button"
+            class="icon-button icon-button-danger"
+            aria-label="Delete the active list"
+            title="Delete list"
+          >🗑</button>
+        </div>
+
+        <!-- ---- Theme switcher ---- -->
         <label class="visually-hidden" for="theme-select">Theme</label>
         <select id="theme-select" class="theme-select" aria-label="Theme">
           <option value="twilight">Twilight Brand</option>
@@ -35,6 +67,7 @@
           <option value="paper">Clean Paper</option>
           <option value="avocado">LuMi Avocado</option>
         </select>
+
       </div>
     </header>
 
@@ -142,8 +175,8 @@
     <!-- ============================ FOOTER ============================ -->
     <footer class="app-footer">
       <div class="footer-actions">
-        <button type="button" id="export-button" class="button">Export JSON</button>
-        <button type="button" id="import-button" class="button">Import JSON</button>
+        <button type="button" id="export-button" class="button">Export active list (JSON)</button>
+        <button type="button" id="import-button" class="button">Import as new list</button>
         <input type="file" id="import-file" accept="application/json,.json" hidden>
       </div>
       <p class="footer-note">Saved locally in your browser. No account, no server.</p>
