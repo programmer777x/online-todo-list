@@ -2,13 +2,22 @@
    Online To Do List — app.js
    ================================================================================================
    All logic: state, rendering, numbering, localStorage persistence, paste dedupe/sort, search,
-   export/import, theme switching. Stage 1 — client-side only, no build step, no frameworks.
+   export/import, theme switching, and multiple named lists.
+   Stage 1 — client-side only, no build step, no frameworks.
 
    State shape (persisted to localStorage under STORAGE_KEY):
      {
-       version: 1,
+       version: 2,
        theme: "twilight" | "terminal" | "paper" | "avocado",
-       tasks: [ task, ... ]
+       activeListId: string,
+       lists: {
+         "<listId>": {
+           id: string,
+           name: string,
+           tasks: [ task, ... ]
+         },
+         ...
+       }
      }
 
    task = {
@@ -20,13 +29,15 @@
      createdAt: number
    }
 
-   Numbering is DERIVED AT RENDER TIME, never stored. One continuous sequence runs across
-   URGENT -> TO DO -> TO SORT (top-level tasks share the sequence; subtasks nest decimally under
-   their parent's number). Because numbers are computed from position, removal renumbers with no
-   gaps automatically — no renumber pass is needed.
+   Numbering is DERIVED AT RENDER TIME, never stored, and is PER LIST. Within a list, one
+   continuous sequence runs across URGENT -> TO DO -> TO SORT (top-level tasks share the
+   sequence; subtasks nest decimally under their parent's number). Because numbers are computed
+   from position, removal renumbers with no gaps automatically — no renumber pass is needed.
 
    Sections are ordered urgent, todo, sort. Sort (TO SORT) is the inbox and participates in the
    same continuous number sequence, per the Stage 1 build brief's numbering rule.
+
+   Themes are global. Switching lists does not change the theme.
    ================================================================================================ */
 
 
@@ -35,6 +46,7 @@
    ================================================================================================ */
 
 const STORAGE_KEY = 'todolist.v1.state';
+const STATE_VERSION = 2;
 
 const SECTIONS = ['urgent', 'todo', 'sort'];
 
@@ -48,15 +60,18 @@ const THEMES = ['twilight', 'terminal', 'paper', 'avocado'];
 
 const DEFAULT_THEME = 'twilight';
 
+const DEFAULT_LIST_NAME = 'Main';
+
 
 /* ================================================================================================
    STATE
    ================================================================================================ */
 
 let state = {
-  version: 1,
+  version: STATE_VERSION,
   theme: DEFAULT_THEME,
-  tasks: [],
+  activeListId: '',
+  lists: {},
 };
 
 /** Transient UI state — not persisted. */
@@ -70,14 +85,16 @@ let ui = {
 
 /* ================================================================================================
    DOM REFERENCES
-   ------------------------------------------------------------------------------------------------
-   Cached once at startup. All elements exist in index.html; if one is missing the app throws
-   loudly rather than silently no-op-ing.
    ================================================================================================ */
 
 const dom = {};
 
 function cacheDom() {
+  dom.listSelect = document.getElementById('list-select');
+  dom.listNewButton = document.getElementById('list-new-button');
+  dom.listRenameButton = document.getElementById('list-rename-button');
+  dom.listDeleteButton = document.getElementById('list-delete-button');
+
   dom.themeSelect = document.getElementById('theme-select');
   dom.quickAddInput = document.getElementById('quick-add-input');
   dom.quickAddButton = document.getElementById('quick-add-button');
@@ -111,8 +128,66 @@ function generateId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();
   }
-  // Fallback: timestamp + random, collision-unlikely for a single-user local app.
   return 'id-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+
+/* ================================================================================================
+   LIST HELPERS
+   ================================================================================================ */
+
+/** Returns the currently active list object. Throws if state is inconsistent. */
+function activeList() {
+  const list = state.lists[state.activeListId];
+  if (!list) {
+    // Should not happen given the load-time guarantee of at least one list, but guard anyway.
+    throw new Error('No active list — state is inconsistent.');
+  }
+  return list;
+}
+
+function listNames() {
+  return Object.values(state.lists).map((l) => l.name);
+}
+
+function uniqueListName(baseName) {
+  const desired = String(baseName || '').trim() || 'List';
+  if (!listNames().includes(desired)) return desired;
+  let n = 2;
+  while (listNames().includes(`${desired} (${n})`)) n += 1;
+  return `${desired} (${n})`;
+}
+
+function createList(name) {
+  const id = generateId();
+  const list = {
+    id,
+    name: uniqueListName(name),
+    tasks: [],
+  };
+  state.lists[id] = list;
+  return list;
+}
+
+function deleteList(listId) {
+  // Guard: never delete the last remaining list.
+  if (Object.keys(state.lists).length <= 1) return false;
+  delete state.lists[listId];
+  // If we deleted the active list, switch to any remaining one.
+  if (state.activeListId === listId) {
+    state.activeListId = Object.keys(state.lists)[0];
+  }
+  return true;
+}
+
+function setActiveList(listId) {
+  if (!state.lists[listId]) return;
+  state.activeListId = listId;
+  // Clear transient per-list UI state when switching.
+  ui.editingId = null;
+  ui.addingSubtaskTo = null;
+  // Search persists across lists intentionally (it's a UI filter, not list data).
+  saveState();
 }
 
 
@@ -125,45 +200,106 @@ function loadState() {
   try {
     raw = localStorage.getItem(STORAGE_KEY);
   } catch (err) {
-    // localStorage may be unavailable (private mode, disabled). Run in-memory for the session.
     console.warn('Could not read localStorage; running without persistence.', err);
+    bootstrapFreshState();
     return;
   }
 
-  if (!raw) return;
+  if (!raw) {
+    bootstrapFreshState();
+    return;
+  }
 
   let parsed;
   try {
     parsed = JSON.parse(raw);
   } catch (err) {
     console.warn('Saved state was not valid JSON; starting fresh.', err);
+    bootstrapFreshState();
     return;
   }
 
-  if (!parsed || typeof parsed !== 'object') return;
-
-  // Validate theme.
-  if (typeof parsed.theme === 'string' && THEMES.includes(parsed.theme)) {
-    state.theme = parsed.theme;
+  // ---- Migrate from v1 (single-list) to v2 (multi-list) --------------------------------------
+  if (parsed && typeof parsed === 'object' && Array.isArray(parsed.tasks) && !parsed.lists) {
+    const migratedTasks = sanitizeTasks(parsed.tasks);
+    const listId = generateId();
+    state.lists = {
+      [listId]: { id: listId, name: DEFAULT_LIST_NAME, tasks: migratedTasks },
+    };
+    state.activeListId = listId;
+    state.theme = THEMES.includes(parsed.theme) ? parsed.theme : DEFAULT_THEME;
+    saveState();
+    return;
   }
 
-  // Validate tasks — keep only well-formed entries, coerce the rest.
-  if (Array.isArray(parsed.tasks)) {
-    state.tasks = parsed.tasks
-      .filter((t) => t && typeof t === 'object' && typeof t.text === 'string')
-      .map((t) => ({
-        id: typeof t.id === 'string' && t.id ? t.id : generateId(),
-        text: t.text,
-        done: Boolean(t.done),
-        section: SECTIONS.includes(t.section) ? t.section : 'sort',
-        parentId: typeof t.parentId === 'string' && t.parentId ? t.parentId : null,
-        createdAt: typeof t.createdAt === 'number' ? t.createdAt : Date.now(),
-      }));
+  // ---- Normal v2 load -------------------------------------------------------------------------
+  if (parsed && typeof parsed === 'object' && parsed.lists && typeof parsed.lists === 'object') {
+    // Theme.
+    if (typeof parsed.theme === 'string' && THEMES.includes(parsed.theme)) {
+      state.theme = parsed.theme;
+    }
+
+    // Lists.
+    const cleanLists = {};
+    for (const [id, list] of Object.entries(parsed.lists)) {
+      if (!list || typeof list !== 'object') continue;
+      const listId = typeof list.id === 'string' && list.id ? list.id : id;
+      const name = typeof list.name === 'string' && list.name.trim() ? list.name : 'List';
+      cleanLists[listId] = {
+        id: listId,
+        name,
+        tasks: sanitizeTasks(Array.isArray(list.tasks) ? list.tasks : []),
+      };
+    }
+
+    if (Object.keys(cleanLists).length === 0) {
+      bootstrapFreshState();
+      return;
+    }
+
+    state.lists = cleanLists;
+
+    // Active list — fall back to first available if the stored id is missing.
+    if (typeof parsed.activeListId === 'string' && cleanLists[parsed.activeListId]) {
+      state.activeListId = parsed.activeListId;
+    } else {
+      state.activeListId = Object.keys(cleanLists)[0];
+    }
+    return;
   }
 
-  // Drop orphaned subtasks (parentId points at a task that no longer exists).
-  const ids = new Set(state.tasks.map((t) => t.id));
-  state.tasks = state.tasks.filter((t) => t.parentId === null || ids.has(t.parentId));
+  // Anything else — start fresh.
+  bootstrapFreshState();
+}
+
+/** Ensures at least one list exists. Used on fresh load and on unrecoverable state. */
+function bootstrapFreshState() {
+  const id = generateId();
+  state.lists = {
+    [id]: { id, name: DEFAULT_LIST_NAME, tasks: [] },
+  };
+  state.activeListId = id;
+}
+
+/**
+ * Validate and normalize a task array. Drops malformed entries and orphaned subtasks.
+ * `source` may be a list's tasks array (load) or an imported file's tasks array.
+ */
+function sanitizeTasks(source) {
+  const cleaned = source
+    .filter((t) => t && typeof t === 'object' && typeof t.text === 'string')
+    .map((t) => ({
+      id: typeof t.id === 'string' && t.id ? t.id : generateId(),
+      text: t.text,
+      done: Boolean(t.done),
+      section: SECTIONS.includes(t.section) ? t.section : 'sort',
+      parentId: typeof t.parentId === 'string' && t.parentId ? t.parentId : null,
+      createdAt: typeof t.createdAt === 'number' ? t.createdAt : Date.now(),
+    }));
+
+  // Drop orphaned subtasks (parentId points at a task not present in this set).
+  const ids = new Set(cleaned.map((t) => t.id));
+  return cleaned.filter((t) => t.parentId === null || ids.has(t.parentId));
 }
 
 function saveState() {
@@ -194,20 +330,23 @@ function setTheme(theme) {
 
 /* ================================================================================================
    TASK HELPERS
+   ------------------------------------------------------------------------------------------------
+   These operate on the ACTIVE LIST. Anything that needs a specific list's tasks accesses
+   `state.lists[listId].tasks` directly.
    ================================================================================================ */
 
 function findTask(id) {
-  return state.tasks.find((t) => t.id === id) || null;
+  return activeList().tasks.find((t) => t.id === id) || null;
 }
 
-function topLevelTasks(section) {
-  return state.tasks
+function topLevelTasks(tasks, section) {
+  return tasks
     .filter((t) => t.section === section && t.parentId === null)
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
-function childrenOf(parentId) {
-  return state.tasks
+function childrenOf(tasks, parentId) {
+  return tasks
     .filter((t) => t.parentId === parentId)
     .sort((a, b) => a.createdAt - b.createdAt);
 }
@@ -216,32 +355,30 @@ function childrenOf(parentId) {
  * Build the render tree for a section: [{ task, number, children: [...] }, ...].
  * Numbers are assigned by position: top-level tasks share one continuous sequence across
  * all sections; a task's children nest under its number (N.1, N.2, ...).
- *
- * The sequence counter is passed in and threaded through so urgent -> todo -> sort is continuous.
  */
-function buildRenderTree(section, counter) {
+function buildRenderTree(tasks, section, counter) {
   const nodes = [];
-  for (const task of topLevelTasks(section)) {
+  for (const task of topLevelTasks(tasks, section)) {
     const number = String(counter.value);
     counter.value += 1;
     nodes.push({
       task,
       number,
-      children: buildChildNodes(task.id, number),
+      children: buildChildNodes(tasks, task.id, number),
     });
   }
   return nodes;
 }
 
-function buildChildNodes(parentId, parentNumber) {
+function buildChildNodes(tasks, parentId, parentNumber) {
   const nodes = [];
-  const children = childrenOf(parentId);
+  const children = childrenOf(tasks, parentId);
   children.forEach((task, index) => {
     const number = `${parentNumber}.${index + 1}`;
     nodes.push({
       task,
       number,
-      children: buildChildNodes(task.id, number),
+      children: buildChildNodes(tasks, task.id, number),
     });
   });
   return nodes;
@@ -260,25 +397,25 @@ function addTask(text, section, parentId) {
     createdAt: Date.now(),
   };
 
-  state.tasks.push(task);
+  activeList().tasks.push(task);
   saveState();
   return task;
 }
 
 function removeTask(id) {
-  // Remove the task and all of its descendants.
+  const list = activeList();
   const toRemove = new Set([id]);
   let grew = true;
   while (grew) {
     grew = false;
-    for (const t of state.tasks) {
+    for (const t of list.tasks) {
       if (t.parentId && toRemove.has(t.parentId) && !toRemove.has(t.id)) {
         toRemove.add(t.id);
         grew = true;
       }
     }
   }
-  state.tasks = state.tasks.filter((t) => !toRemove.has(t.id));
+  list.tasks = list.tasks.filter((t) => !toRemove.has(t.id));
   saveState();
 }
 
@@ -293,7 +430,7 @@ function updateText(id, text) {
   const task = findTask(id);
   if (!task) return;
   const trimmed = String(text).trim();
-  if (!trimmed) return; // ignore empty edits
+  if (!trimmed) return;
   task.text = trimmed;
   saveState();
 }
@@ -311,30 +448,18 @@ function moveTask(id, section) {
    SEARCH
    ------------------------------------------------------------------------------------------------
    A task is visible if its own text matches, OR any of its descendants match. When a descendant
-   matches, its ancestors are shown too (so the path to the match is visible).
+   matches, its ancestors are shown too.
    ================================================================================================ */
 
-function taskMatchesSearch(task, query) {
-  if (!query) return true;
-  return task.text.toLowerCase().includes(query);
-}
-
-/**
- * Returns the set of task ids that should be visible given the current search query.
- * Empty query -> all ids.
- */
-function visibleIdsForSearch(query) {
-  if (!query) return null; // null means "no filtering"
+function visibleIdsForSearch(tasks, query) {
+  if (!query) return null;
 
   const visible = new Set();
-
-  // Pass 1: direct matches.
-  for (const task of state.tasks) {
-    if (taskMatchesSearch(task, query)) visible.add(task.id);
+  for (const task of tasks) {
+    if (task.text.toLowerCase().includes(query)) visible.add(task.id);
   }
 
-  // Pass 2: add ancestors of any match so the tree path is intact.
-  const byId = new Map(state.tasks.map((t) => [t.id, t]));
+  const byId = new Map(tasks.map((t) => [t.id, t]));
   for (const id of Array.from(visible)) {
     let current = byId.get(id);
     while (current && current.parentId) {
@@ -352,14 +477,16 @@ function visibleIdsForSearch(query) {
    ================================================================================================ */
 
 function render() {
-  const visibleIds = visibleIdsForSearch(ui.search);
+  const list = activeList();
+  const tasks = list.tasks;
+
+  const visibleIds = visibleIdsForSearch(tasks, ui.search);
   const counter = { value: 1 };
 
   for (const section of SECTIONS) {
-    const tree = buildRenderTree(section, counter);
+    const tree = buildRenderTree(tasks, section, counter);
 
-    // Count: tasks in this section that are visible (post-search).
-    const sectionTasks = state.tasks.filter((t) => t.section === section);
+    const sectionTasks = tasks.filter((t) => t.section === section);
     const visibleSectionTasks = visibleIds
       ? sectionTasks.filter((t) => visibleIds.has(t.id))
       : sectionTasks;
@@ -386,8 +513,6 @@ function render() {
 function renderNode(node, visibleIds) {
   const { task, number, children } = node;
 
-  // If a search filter is active and this task is not visible, skip it (and its subtree
-  // was already pruned by visibleIdsForSearch — but we still check).
   if (visibleIds && !visibleIds.has(task.id)) {
     return document.createDocumentFragment();
   }
@@ -449,7 +574,6 @@ function renderNode(node, visibleIds) {
     input.addEventListener('blur', commit);
 
     row.appendChild(input);
-    // Focus after the row is in the DOM.
     setTimeout(() => {
       input.focus();
       input.select();
@@ -458,7 +582,6 @@ function renderNode(node, visibleIds) {
     const textEl = document.createElement('span');
     textEl.className = 'task-text';
     textEl.textContent = task.text;
-    // Double-click to edit.
     textEl.addEventListener('dblclick', () => {
       ui.editingId = task.id;
       render();
@@ -470,7 +593,6 @@ function renderNode(node, visibleIds) {
   const actions = document.createElement('div');
   actions.className = 'task-actions';
 
-  // Edit button (explicit control in addition to double-click).
   const editBtn = document.createElement('button');
   editBtn.type = 'button';
   editBtn.className = 'task-action';
@@ -483,7 +605,6 @@ function renderNode(node, visibleIds) {
   });
   actions.appendChild(editBtn);
 
-  // Add subtask button.
   const subtaskBtn = document.createElement('button');
   subtaskBtn.type = 'button';
   subtaskBtn.className = 'task-action';
@@ -496,7 +617,6 @@ function renderNode(node, visibleIds) {
   });
   actions.appendChild(subtaskBtn);
 
-  // Move-between-sections select.
   const moveSelect = document.createElement('select');
   moveSelect.className = 'task-move-select';
   moveSelect.setAttribute('aria-label', 'Move task to another section');
@@ -514,7 +634,6 @@ function renderNode(node, visibleIds) {
   });
   actions.appendChild(moveSelect);
 
-  // Remove button.
   const removeBtn = document.createElement('button');
   removeBtn.type = 'button';
   removeBtn.className = 'task-action task-action-danger';
@@ -563,7 +682,6 @@ function renderNode(node, visibleIds) {
         cancelSub();
       }
     });
-    // Note: no blur-commit here, so an accidental blur doesn't silently add a subtask.
 
     addRow.appendChild(subInput);
     item.appendChild(addRow);
@@ -586,10 +704,32 @@ function renderNode(node, visibleIds) {
 
 
 /* ================================================================================================
+   LIST SWITCHER RENDERING
+   ================================================================================================ */
+
+function renderListSwitcher() {
+  const select = dom.listSelect;
+  select.innerHTML = '';
+
+  for (const list of Object.values(state.lists)) {
+    const opt = document.createElement('option');
+    opt.value = list.id;
+    opt.textContent = list.name;
+    if (list.id === state.activeListId) opt.selected = true;
+    select.appendChild(opt);
+  }
+
+  // Disable delete when only one list remains (per the build brief: never delete the last list).
+  const onlyOne = Object.keys(state.lists).length <= 1;
+  dom.listDeleteButton.disabled = onlyOne;
+  dom.listDeleteButton.title = onlyOne
+    ? 'Cannot delete the only list'
+    : 'Delete list';
+}
+
+
+/* ================================================================================================
    PASTE BOX
-   ------------------------------------------------------------------------------------------------
-   Splits on newlines, trims, skips empties, dedupes against existing tasks AND against earlier
-   lines in the same paste. Normalization: trim, lowercase, collapse internal whitespace.
    ================================================================================================ */
 
 function normalizeForDedupe(text) {
@@ -600,7 +740,7 @@ function handlePasteAdd() {
   const raw = dom.pasteInput.value;
   const lines = raw.split(/\r?\n/);
 
-  const existing = new Set(state.tasks.map((t) => normalizeForDedupe(t.text)));
+  const existing = new Set(activeList().tasks.map((t) => normalizeForDedupe(t.text)));
   let added = 0;
   let skipped = 0;
 
@@ -621,13 +761,11 @@ function handlePasteAdd() {
 
   dom.pasteInput.value = '';
 
-  // Summary line, per the brief's wording.
   const parts = [];
   parts.push(`Added ${added}`);
   if (skipped > 0) parts.push(`skipped ${skipped} duplicate${skipped === 1 ? '' : 's'}`);
   dom.pasteStatus.textContent = parts.join(', ');
 
-  // Clear the status after a few seconds so it doesn't linger.
   setTimeout(() => {
     if (dom.pasteStatus.textContent) dom.pasteStatus.textContent = '';
   }, 4000);
@@ -638,27 +776,41 @@ function handlePasteAdd() {
 
 /* ================================================================================================
    EXPORT / IMPORT
+   ------------------------------------------------------------------------------------------------
+   Export: the ACTIVE list only, as JSON.
+   Import: adds the file's tasks as a NEW list. Never touches existing lists. Name is prompted,
+   pre-filled from the filename.
    ================================================================================================ */
 
 function handleExport() {
+  const list = activeList();
   const payload = {
     version: 1,
     exportedAt: new Date().toISOString(),
-    theme: state.theme,
-    tasks: state.tasks,
+    listName: list.name,
+    tasks: list.tasks,
   };
 
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
 
-  const a = document.createElement('a');
+  const safeName = list.name.replace(/[^a-z0-9_-]+/gi, '-').replace(/^-+|-+$/g, '') || 'list';
   const stamp = new Date().toISOString().slice(0, 10);
+
+  const a = document.createElement('a');
   a.href = url;
-  a.download = `online-todo-list-${stamp}.json`;
+  a.download = `${safeName}-${stamp}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+function deriveListNameFromFile(filename) {
+  return String(filename || '')
+    .replace(/\.json$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
 }
 
 function handleImportFile(file) {
@@ -678,43 +830,31 @@ function handleImportFile(file) {
       return;
     }
 
-    const ok = window.confirm(
-      'Importing will REPLACE your current list with the contents of this file.\n\n' +
-      'This cannot be undone. Continue?'
-    );
-    if (!ok) return;
+    // Pre-fill the prompt with the file's list name, or the filename if absent.
+    const fallback = parsed.listName || deriveListNameFromFile(file.name) || 'Imported list';
+    const entered = window.prompt('Name for the imported list:', uniqueListName(fallback));
+    if (entered === null) return; // user cancelled
 
-    // Rebuild state from the imported payload, validating each task.
-    const importedTasks = parsed.tasks
-      .filter((t) => t && typeof t === 'object' && typeof t.text === 'string')
-      .map((t) => ({
-        id: typeof t.id === 'string' && t.id ? t.id : generateId(),
-        text: t.text,
-        done: Boolean(t.done),
-        section: SECTIONS.includes(t.section) ? t.section : 'sort',
-        parentId: typeof t.parentId === 'string' && t.parentId ? t.parentId : null,
-        createdAt: typeof t.createdAt === 'number' ? t.createdAt : Date.now(),
-      }));
+    const finalName = String(entered).trim() || uniqueListName(fallback);
+    const sanitizedTasks = sanitizeTasks(parsed.tasks);
 
-    const ids = new Set(importedTasks.map((t) => t.id));
-    const cleaned = importedTasks.filter((t) => t.parentId === null || ids.has(t.parentId));
+    const newList = createList(finalName);
+    newList.tasks = sanitizedTasks;
 
-    state.tasks = cleaned;
-    if (typeof parsed.theme === 'string' && THEMES.includes(parsed.theme)) {
-      state.theme = parsed.theme;
-      applyTheme(state.theme);
-    }
-
+    // Switch to the new list so the import is visible.
+    state.activeListId = newList.id;
     ui.editingId = null;
     ui.addingSubtaskTo = null;
 
     saveState();
+    renderListSwitcher();
     render();
 
-    dom.pasteStatus.textContent = `Imported ${cleaned.length} task${cleaned.length === 1 ? '' : 's'}.`;
+    dom.pasteStatus.textContent =
+      `Imported ${sanitizedTasks.length} task${sanitizedTasks.length === 1 ? '' : 's'} as "${newList.name}".`;
     setTimeout(() => {
       if (dom.pasteStatus.textContent.startsWith('Imported')) dom.pasteStatus.textContent = '';
-    }, 4000);
+    }, 5000);
   };
 
   reader.onerror = () => {
@@ -726,16 +866,85 @@ function handleImportFile(file) {
 
 
 /* ================================================================================================
+   LIST ACTIONS (create / rename / delete / switch)
+   ================================================================================================ */
+
+function handleListSwitch(listId) {
+  setActiveList(listId);
+  renderListSwitcher();
+  render();
+}
+
+function handleListNew() {
+  const entered = window.prompt('Name for the new list:', 'New list');
+  if (entered === null) return;
+  const name = String(entered).trim() || 'New list';
+  const list = createList(name);
+  state.activeListId = list.id;
+  ui.editingId = null;
+  ui.addingSubtaskTo = null;
+  saveState();
+  renderListSwitcher();
+  render();
+}
+
+function handleListRename() {
+  const list = activeList();
+  const entered = window.prompt('Rename list:', list.name);
+  if (entered === null) return;
+  const name = String(entered).trim();
+  if (!name) return;
+  // Allow renaming to its own name; only dedupe against OTHER lists.
+  const others = Object.values(state.lists)
+    .filter((l) => l.id !== list.id)
+    .map((l) => l.name);
+  let finalName = name;
+  if (others.includes(finalName)) {
+    let n = 2;
+    while (others.includes(`${name} (${n})`)) n += 1;
+    finalName = `${name} (${n})`;
+  }
+  list.name = finalName;
+  saveState();
+  renderListSwitcher();
+}
+
+function handleListDelete() {
+  if (Object.keys(state.lists).length <= 1) return; // guarded, but check anyway
+  const list = activeList();
+  const ok = window.confirm(
+    `Delete the list "${list.name}" and all of its tasks?\n\nThis cannot be undone.`
+  );
+  if (!ok) return;
+  const wasActive = list.id;
+  deleteList(wasActive);
+  ui.editingId = null;
+  ui.addingSubtaskTo = null;
+  saveState();
+  renderListSwitcher();
+  render();
+}
+
+
+/* ================================================================================================
    EVENT WIRING
    ================================================================================================ */
 
 function wireEvents() {
-  // Theme.
+  // ---- List switcher ----
+  dom.listSelect.addEventListener('change', () => {
+    handleListSwitch(dom.listSelect.value);
+  });
+  dom.listNewButton.addEventListener('click', handleListNew);
+  dom.listRenameButton.addEventListener('click', handleListRename);
+  dom.listDeleteButton.addEventListener('click', handleListDelete);
+
+  // ---- Theme ----
   dom.themeSelect.addEventListener('change', () => {
     setTheme(dom.themeSelect.value);
   });
 
-  // Quick add — lands in TO SORT.
+  // ---- Quick add ----
   const quickAddCommit = () => {
     const value = dom.quickAddInput.value;
     if (!value.trim()) return;
@@ -751,7 +960,7 @@ function wireEvents() {
     }
   });
 
-  // Per-section "+" buttons — add directly to that section.
+  // ---- Per-section "+" buttons ----
   dom.sections.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-add-to]');
     if (!btn) return;
@@ -763,7 +972,7 @@ function wireEvents() {
     }
   });
 
-  // Search.
+  // ---- Search ----
   dom.searchInput.addEventListener('input', () => {
     ui.searchRaw = dom.searchInput.value;
     ui.search = ui.searchRaw.trim().toLowerCase();
@@ -779,10 +988,10 @@ function wireEvents() {
     dom.searchInput.focus();
   });
 
-  // Paste box.
+  // ---- Paste box ----
   dom.pasteAddButton.addEventListener('click', handlePasteAdd);
 
-  // Export / import.
+  // ---- Export / import ----
   dom.exportButton.addEventListener('click', handleExport);
   dom.importButton.addEventListener('click', () => {
     dom.importFile.click();
@@ -790,11 +999,10 @@ function wireEvents() {
   dom.importFile.addEventListener('change', () => {
     const file = dom.importFile.files && dom.importFile.files[0];
     if (file) handleImportFile(file);
-    // Reset so selecting the same file again re-triggers change.
     dom.importFile.value = '';
   });
 
-  // Global Escape: cancel any open inline edit or add-subtask input.
+  // ---- Global Escape ----
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && (ui.editingId || ui.addingSubtaskTo)) {
       ui.editingId = null;
@@ -813,6 +1021,7 @@ function init() {
   cacheDom();
   loadState();
   applyTheme(state.theme);
+  renderListSwitcher();
   wireEvents();
   render();
 }
