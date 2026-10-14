@@ -12,7 +12,7 @@
      1. Theme tokens (twilight / terminal / paper / avocado)
      2. Base reset & page background
      3. App shell
-     4. Header
+     4. Header (brand, list switcher, theme switcher)
      5. Quick add
      6. Search
      7. Sections & section headers
@@ -291,6 +291,9 @@ body {
 
 /* ================================================================================================
    4. HEADER
+   ------------------------------------------------------------------------------------------------
+   Three regions: brand (icon + title) on the left, then a controls row holding the list switcher
+   and the theme switcher. On narrow screens the controls wrap below the brand.
    ================================================================================================ */
 
 .app-header {
@@ -331,7 +334,80 @@ body {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  flex-wrap: wrap;
 }
+
+/* ---- List switcher --------------------------------------------------------------------------- */
+
+.list-switcher {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-pill);
+  padding: 3px 3px 3px var(--space-2);
+  backdrop-filter: blur(var(--panel-blur));
+  -webkit-backdrop-filter: blur(var(--panel-blur));
+}
+
+.list-select {
+  font-family: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+  max-width: 9rem;
+  text-overflow: ellipsis;
+}
+
+.list-select:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+  border-radius: var(--radius-sm);
+}
+
+/* ---- Icon buttons (list new / rename / delete) ------------------------------------------------ */
+
+.icon-button {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.icon-button:hover:not(:disabled) {
+  background: var(--card-bg-hover);
+  color: var(--text-primary);
+}
+
+.icon-button:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+}
+
+.icon-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.icon-button-danger:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+/* ---- Theme switcher --------------------------------------------------------------------------- */
 
 .theme-select {
   font-family: inherit;
@@ -960,6 +1036,16 @@ body {
     font-size: 1.25rem;
   }
 
+  /* Header controls wrap below the brand and take the full width. */
+  .app-header-controls {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .list-select {
+    max-width: 6rem;
+  }
+
   .task-row {
     gap: var(--space-2);
     padding: var(--space-2) var(--space-3);
@@ -987,7 +1073,7 @@ body {
     padding-left: var(--space-4);
   }
 
-  /* Touch-friendly: always show the theme select at a comfortable height. */
+  /* Touch-friendly: comfortable heights on the header controls. */
   .theme-select {
     padding: var(--space-2) var(--space-3);
   }
