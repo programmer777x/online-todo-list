@@ -1,1 +1,156 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="twilight">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Online To Do List — a fast, private, offline-capable to-do list.">
+  <title>Online To Do List</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
 
+  <div class="app-shell">
+
+    <!-- ============================ HEADER ============================ -->
+    <header class="app-header">
+      <div class="app-brand">
+        <span class="app-brand-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none"
+               stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 6l2 2 3-3"></path>
+            <path d="M3 14l2 2 3-3"></path>
+            <line x1="12" y1="7" x2="21" y2="7"></line>
+            <line x1="12" y1="15" x2="21" y2="15"></line>
+          </svg>
+        </span>
+        <h1 class="app-title">Online To Do List</h1>
+      </div>
+
+      <div class="app-header-controls">
+        <label class="visually-hidden" for="theme-select">Theme</label>
+        <select id="theme-select" class="theme-select" aria-label="Theme">
+          <option value="twilight">Twilight Brand</option>
+          <option value="terminal">Midnight Terminal</option>
+          <option value="paper">Clean Paper</option>
+          <option value="avocado">LuMi Avocado</option>
+        </select>
+      </div>
+    </header>
+
+    <!-- ============================ QUICK ADD ============================ -->
+    <section class="quick-add" aria-label="Quick add">
+      <input
+        type="text"
+        id="quick-add-input"
+        class="quick-add-input"
+        placeholder="Quick add… (lands in TO SORT)"
+        autocomplete="off"
+        aria-label="Quick add a task"
+      >
+      <button
+        type="button"
+        id="quick-add-button"
+        class="quick-add-button"
+        aria-label="Add task"
+      >+</button>
+    </section>
+
+    <!-- ============================ SEARCH ============================ -->
+    <section class="search-row" aria-label="Search">
+      <label class="visually-hidden" for="search-input">Search tasks</label>
+      <input
+        type="search"
+        id="search-input"
+        class="search-input"
+        placeholder="Search…"
+        autocomplete="off"
+        aria-label="Search tasks"
+      >
+      <button type="button" id="search-clear" class="search-clear" aria-label="Clear search" hidden>×</button>
+    </section>
+
+    <!-- ============================ SECTIONS ============================ -->
+    <main id="sections" class="sections">
+
+      <!-- URGENT -->
+      <section class="task-section" data-section="urgent" aria-labelledby="section-urgent-title">
+        <header class="task-section-header">
+          <span class="task-section-icon" aria-hidden="true">🔥</span>
+          <h2 class="task-section-title" id="section-urgent-title">URGENT</h2>
+          <span class="task-section-count" data-count-for="urgent">0</span>
+          <button
+            type="button"
+            class="task-section-add"
+            data-add-to="urgent"
+            aria-label="Add task to URGENT"
+          >+</button>
+        </header>
+        <ul class="task-list" data-list-for="urgent"></ul>
+      </section>
+
+      <!-- TO DO -->
+      <section class="task-section" data-section="todo" aria-labelledby="section-todo-title">
+        <header class="task-section-header">
+          <span class="task-section-icon" aria-hidden="true">📋</span>
+          <h2 class="task-section-title" id="section-todo-title">TO DO</h2>
+          <span class="task-section-count" data-count-for="todo">0</span>
+          <button
+            type="button"
+            class="task-section-add"
+            data-add-to="todo"
+            aria-label="Add task to TO DO"
+          >+</button>
+        </header>
+        <ul class="task-list" data-list-for="todo"></ul>
+      </section>
+
+      <!-- TO SORT -->
+      <section class="task-section" data-section="sort" aria-labelledby="section-sort-title">
+        <header class="task-section-header">
+          <span class="task-section-icon" aria-hidden="true">🗂️</span>
+          <h2 class="task-section-title" id="section-sort-title">TO SORT</h2>
+          <span class="task-section-count" data-count-for="sort">0</span>
+          <button
+            type="button"
+            class="task-section-add"
+            data-add-to="sort"
+            aria-label="Add task to TO SORT"
+          >+</button>
+        </header>
+        <ul class="task-list" data-list-for="sort"></ul>
+      </section>
+
+    </main>
+
+    <!-- ============================ PASTE BOX ============================ -->
+    <section class="paste-box" aria-label="Paste tasks">
+      <label class="paste-box-label" for="paste-input">Paste multiple tasks (one per line)</label>
+      <textarea
+        id="paste-input"
+        class="paste-input"
+        rows="4"
+        placeholder="One task per line…"
+        spellcheck="false"
+      ></textarea>
+      <div class="paste-box-actions">
+        <button type="button" id="paste-add-button" class="button button-primary">Add pasted lines</button>
+        <span id="paste-status" class="paste-status" role="status" aria-live="polite"></span>
+      </div>
+    </section>
+
+    <!-- ============================ FOOTER ============================ -->
+    <footer class="app-footer">
+      <div class="footer-actions">
+        <button type="button" id="export-button" class="button">Export JSON</button>
+        <button type="button" id="import-button" class="button">Import JSON</button>
+        <input type="file" id="import-file" accept="application/json,.json" hidden>
+      </div>
+      <p class="footer-note">Saved locally in your browser. No account, no server.</p>
+    </footer>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
