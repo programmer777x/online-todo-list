@@ -25,10 +25,14 @@
     14. Responsive
 
    Responsive strategy:
-     - At/above 640px: task actions are inline (edit, subtask, move <select>, delete).
-       The ⋯ button is hidden, the action menu is never rendered.
-     - Below 640px: inline actions are hidden, a single ⋯ button is shown, and the action menu
-       carries every action. This frees the text column so mid-word breaks cannot occur.
+     - Default (all widths): the ⋯ button and its menu are VISIBLE, inline actions are VISIBLE.
+     - At/above 640px (desktop): inline actions shown, ⋯ button and menu hidden.
+     - Below 640px (mobile): inline actions hidden, ⋯ button and menu shown.
+
+   The visibility default is "visible" and the desktop breakpoint hides the mobile controls. This
+   is deliberate: a default-hidden control that relies on a later media query to show it is
+   fragile, because media queries add no specificity and the fix depends on source order alone.
+   Defaulting to visible removes that failure mode.
    ================================================================================================ */
 
 
@@ -56,8 +60,6 @@
   --transition-fast: 120ms ease;
   --transition-med: 220ms ease;
 
-  /* Breakpoint where inline actions collapse into the ⋯ menu. Kept as a token for reference;
-     media queries cannot read custom properties, so the value is duplicated in section 14. */
   --actions-breakpoint: 640px;
 }
 
@@ -100,7 +102,6 @@
   --section-title-color: #ffffff;
   --danger: #ff6b8a;
 
-  /* Menu surface — opaque enough to sit above cards without washing out. */
   --menu-bg: rgba(30, 22, 70, 0.98);
   --menu-border: rgba(255, 255, 255, 0.16);
   --menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
@@ -342,8 +343,6 @@ body {
   flex-wrap: wrap;
 }
 
-/* ---- List switcher --------------------------------------------------------------------------- */
-
 .list-switcher {
   display: flex;
   align-items: center;
@@ -374,8 +373,6 @@ body {
   box-shadow: var(--accent-glow);
   border-radius: var(--radius-sm);
 }
-
-/* ---- Icon buttons ---------------------------------------------------------------------------- */
 
 .icon-button {
   width: 26px;
@@ -411,8 +408,6 @@ body {
 .icon-button-danger:hover:not(:disabled) {
   color: var(--danger);
 }
-
-/* ---- Theme switcher -------------------------------------------------------------------------- */
 
 .theme-select {
   font-family: inherit;
@@ -663,7 +658,7 @@ body {
 }
 
 .task-row {
-  position: relative; /* anchors the absolutely-positioned action menu */
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -684,7 +679,6 @@ body {
   border-color: var(--done);
 }
 
-/* Checkbox — circular ring when open, filled with a check when done. */
 .task-check {
   flex: 0 0 auto;
   width: 26px;
@@ -718,7 +712,6 @@ body {
   color: #ffffff;
 }
 
-/* Number — derived at render time. Never wraps. */
 .task-number {
   flex: 0 0 auto;
   font-family: var(--number-font, var(--font-body));
@@ -734,16 +727,6 @@ body {
   color: var(--done-text);
 }
 
-/* Task text.
-
-   Wrapping rule (the core of the mobile fix):
-     word-break: normal      -> never break mid-word for normal text
-     overflow-wrap: break-word -> allow breaking a truly unbreakable string (long URL)
-     min-width: 0            -> let the flex item shrink instead of forcing overflow
-
-   The `white-space: pre-wrap` from the earlier version is preserved so multi-line task text
-   (e.g. the imported transcript) still renders with its line breaks. `pre-wrap` implies
-   `word-break: normal` behavior for wrapping, and works with `overflow-wrap`. */
 .task-text {
   flex: 1 1 auto;
   min-width: 0;
@@ -761,7 +744,6 @@ body {
   color: var(--done-text);
 }
 
-/* Inline edit input replaces the text span in place. */
 .task-edit-input {
   flex: 1 1 auto;
   min-width: 0;
@@ -779,7 +761,7 @@ body {
   box-shadow: var(--accent-glow);
 }
 
-/* ---- Inline action controls (desktop) -------------------------------------------------------- */
+/* ---- Inline action controls (desktop only) --------------------------------------------------- */
 
 .task-actions {
   flex: 0 0 auto;
@@ -818,7 +800,6 @@ body {
   color: var(--danger);
 }
 
-/* Move-between-sections control — desktop uses a <select>. */
 .task-move-select {
   font-family: inherit;
   font-size: 0.75rem;
@@ -840,7 +821,9 @@ body {
   box-shadow: var(--accent-glow);
 }
 
-/* ---- ⋯ menu button (mobile only) ------------------------------------------------------------- */
+/* ---- ⋯ menu button (mobile only) -------------------------------------------------------------
+   VISIBLE BY DEFAULT. Hidden above the breakpoint by section 14. See the header comment for why
+   the default is "visible" rather than "hidden". */
 
 .task-menu-button {
   flex: 0 0 auto;
@@ -877,13 +860,6 @@ body {
   border-color: var(--accent);
 }
 
-/* The ⋯ button and its menu are hidden at/above the breakpoint; inline actions are hidden below. */
-.task-menu-button,
-.task-action-menu {
-  display: none;
-}
-
-/* Subtask container — indented under its parent. */
 .task-children {
   list-style: none;
   margin: 0;
@@ -893,7 +869,6 @@ body {
   gap: var(--space-2);
 }
 
-/* "Add subtask" inline control row. */
 .task-add-subtask-row {
   padding-left: var(--space-5);
   display: flex;
@@ -918,7 +893,6 @@ body {
   box-shadow: var(--accent-glow);
 }
 
-/* Empty-state message inside a section. */
 .task-empty {
   font-size: 0.875rem;
   color: var(--text-muted);
@@ -926,7 +900,6 @@ body {
   padding: var(--space-2) var(--space-3);
 }
 
-/* Search highlight on matched text. */
 .task-text mark {
   background: var(--accent-soft);
   color: var(--text-primary);
@@ -1059,17 +1032,11 @@ body {
    12. TASK ACTION MENU
    ------------------------------------------------------------------------------------------------
    Mobile-only dropdown, anchored to the right edge of the task row. Rendered by app.js only when
-   the viewport is below the breakpoint; hidden by default (see the display: none rule in §8).
+   a task's menu is open; the base rule below gives it its shape.
 
-   Structure:
-     .task-action-menu
-       .task-menu-item           (edit)
-       .task-menu-item           (add subtask)
-       .task-menu-group-label    ("Move to")
-       .task-menu-item           (move target A)
-       .task-menu-item           (move target B)
-       .task-menu-divider
-       .task-menu-item.task-menu-item-danger  (remove)
+   VISIBILITY NOTE: this menu element is created by app.js only when a menu is open, so it does
+   not need a display: none default. The display: none in the earlier version was the bug — it
+   hid the menu even when app.js had rendered it. There is no display rule here at all now.
    ================================================================================================ */
 
 .task-action-menu {
@@ -1088,7 +1055,6 @@ body {
   animation: task-menu-in var(--transition-med) both;
 }
 
-/* Flip upward when there is not enough room below (set by JS via .is-flipped). */
 .task-action-menu.is-flipped {
   top: auto;
   bottom: calc(100% + 6px);
@@ -1157,7 +1123,6 @@ body {
   color: var(--accent);
 }
 
-/* Non-interactive label above the move targets. */
 .task-menu-group-label {
   padding: var(--space-2) var(--space-3) var(--space-1);
   font-size: 0.6875rem;
@@ -1212,45 +1177,37 @@ body {
 /* ================================================================================================
    14. RESPONSIVE
    ------------------------------------------------------------------------------------------------
-   Two breakpoints:
+   Desktop-only hiding lives here, and ONLY here. There is no base display: none to undo.
 
-     max-width: 639.98px  -> action menu mode. Inline actions hidden, ⋯ button shown.
-     max-width: 420px     -> density adjustments (spacing, tap-target sizes).
-     min-width: 900px     -> shell breathing room.
-
-   639.98px is used rather than 640px so the switch lands cleanly just below the breakpoint at
-   fractional device pixel ratios (avoids the 1px-overlap class of bugs on some phones).
+     min-width: 640px  -> inline actions shown, ⋯ button + menu hidden
+     max-width: 639.98px -> density and tap-target adjustments only (no visibility changes)
+     max-width: 420px  -> tighter spacing
+     min-width: 900px  -> shell breathing room
    ================================================================================================ */
 
-/* ---- Action menu mode (below 640px) ---------------------------------------------------------- */
+/* ---- Desktop: hide the mobile ⋯ controls, keep the inline ones --------------------------------- */
+
+@media (min-width: 640px) {
+  .task-menu-button {
+    display: none;
+  }
+}
+
+/* ---- Mobile: hide the desktop inline controls ------------------------------------------------- */
 
 @media (max-width: 639.98px) {
-  /* Hide the inline action controls. */
   .task-actions {
     display: none;
   }
 
-  /* Show the ⋯ button and its menu. */
-  .task-menu-button {
-    display: inline-flex;
-  }
-
-  .task-action-menu {
-    display: block;
-  }
-
-  /* The row needs the ⋯ button vertically centered at the right edge. It already is, by virtue
-     of flex alignment — no extra rule needed beyond flex: 0 0 auto on the button itself. */
   .task-row {
     gap: var(--space-2);
   }
 
-  /* Free as much horizontal space as possible for the text. */
   .task-text {
     padding-right: var(--space-1);
   }
 
-  /* On phones, give the ⋯ button a comfortable tap target without stretching the row. */
   .task-menu-button {
     width: 38px;
     height: 38px;
@@ -1300,7 +1257,6 @@ body {
     padding: var(--space-2) var(--space-3);
   }
 
-  /* Tighter menu on small phones, still comfortably tappable. */
   .task-action-menu {
     min-width: 170px;
   }
