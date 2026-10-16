@@ -2,7 +2,7 @@
    Online To Do List — app.js
    ================================================================================================
    All logic: state, rendering, numbering, localStorage persistence, paste dedupe/sort, search,
-   export/import, theme switching, and multiple named lists.
+   export/import, theme switching, multiple named lists, and the mobile ⋯ action menu.
    Stage 1 — client-side only, no build step, no frameworks.
 
    State shape (persisted to localStorage under STORAGE_KEY):
@@ -11,33 +11,28 @@
        theme: "twilight" | "terminal" | "paper" | "avocado",
        activeListId: string,
        lists: {
-         "<listId>": {
-           id: string,
-           name: string,
-           tasks: [ task, ... ]
-         },
+         "<listId>": { id, name, tasks: [task, ...] },
          ...
        }
      }
 
    task = {
-     id: string,                    // stable internal id, never shown
-     text: string,
-     done: boolean,
+     id: string, text: string, done: boolean,
      section: "urgent" | "todo" | "sort",
-     parentId: string | null,
-     createdAt: number
+     parentId: string | null, createdAt: number
    }
 
    Numbering is DERIVED AT RENDER TIME, never stored, and is PER LIST. Within a list, one
-   continuous sequence runs across URGENT -> TO DO -> TO SORT (top-level tasks share the
-   sequence; subtasks nest decimally under their parent's number). Because numbers are computed
-   from position, removal renumbers with no gaps automatically — no renumber pass is needed.
+   continuous sequence runs across URGENT -> TO DO -> TO SORT. Subtasks nest decimally.
 
-   Sections are ordered urgent, todo, sort. Sort (TO SORT) is the inbox and participates in the
-   same continuous number sequence, per the Stage 1 build brief's numbering rule.
+   ---- Mobile action menu ---------------------------------------------------------------------
+   Below 640px (CSS breakpoint), each task row renders a single ⋯ button instead of the four inline
+   action controls. The button opens .task-action-menu, which carries every action the desktop
+   inline controls offer. Menu items call the SAME handler functions the inline controls call —
+   there is no duplicated action logic.
 
-   Themes are global. Switching lists does not change the theme.
+   The menu is rendered into the task row (position: relative) so it stays anchored across
+   re-renders. Open/close is tracked in `ui.openMenuTaskId`. At most one menu is open at a time.
    ================================================================================================ */
 
 
@@ -56,11 +51,24 @@ const SECTION_LABELS = {
   sort: 'TO SORT',
 };
 
+/** Short human names for the move-menu items. */
+const SECTION_MOVE_LABELS = {
+  urgent: 'Move to Urgent',
+  todo: 'Move to To Do',
+  sort: 'Move to To Sort',
+};
+
 const THEMES = ['twilight', 'terminal', 'paper', 'avocado'];
 
 const DEFAULT_THEME = 'twilight';
 
 const DEFAULT_LIST_NAME = 'Main';
+
+/**
+ * Breakpoint (in px) below which the ⋯ action menu is used. Must match the media query in
+ * styles.css section 14. Kept here so JS and CSS agree on one number.
+ */
+const ACTIONS_BREAKPOINT_PX = 640;
 
 
 /* ================================================================================================
@@ -74,12 +82,16 @@ let state = {
   lists: {},
 };
 
-/** Transient UI state — not persisted. */
+/**
+ * Transient UI state — not persisted.
+ *   openMenuTaskId: id of the task whose ⋯ menu is open, or null. At most one at a time.
+ */
 let ui = {
-  editingId: null,       // id of the task currently being inline-edited, or null
-  addingSubtaskTo: null, // id of the task whose "add subtask" input is open, or null
-  search: '',            // current search query (lowercased for matching)
-  searchRaw: '',         // current search query as typed (for the input value)
+  editingId: null,
+  addingSubtaskTo: null,
+  search: '',
+  searchRaw: '',
+  openMenuTaskId: null,
 };
 
 
@@ -116,12 +128,14 @@ function cacheDom() {
   }
 }
 
+/** True when the viewport is below the action-menu breakpoint. */
+function isMobileActions() {
+  return window.matchMedia(`(max-width: ${ACTIONS_BREAKPOINT_PX - 0.02}px)`).matches;
+}
+
 
 /* ================================================================================================
    ID GENERATION
-   ------------------------------------------------------------------------------------------------
-   crypto.randomUUID() needs a secure context. https:// (GitHub Pages) and file:// both qualify in
-   modern browsers, but older browsers on file:// may not expose it — hence the fallback.
    ================================================================================================ */
 
 function generateId() {
@@ -136,11 +150,9 @@ function generateId() {
    LIST HELPERS
    ================================================================================================ */
 
-/** Returns the currently active list object. Throws if state is inconsistent. */
 function activeList() {
   const list = state.lists[state.activeListId];
   if (!list) {
-    // Should not happen given the load-time guarantee of at least one list, but guard anyway.
     throw new Error('No active list — state is inconsistent.');
   }
   return list;
@@ -160,20 +172,14 @@ function uniqueListName(baseName) {
 
 function createList(name) {
   const id = generateId();
-  const list = {
-    id,
-    name: uniqueListName(name),
-    tasks: [],
-  };
+  const list = { id, name: uniqueListName(name), tasks: [] };
   state.lists[id] = list;
   return list;
 }
 
 function deleteList(listId) {
-  // Guard: never delete the last remaining list.
   if (Object.keys(state.lists).length <= 1) return false;
   delete state.lists[listId];
-  // If we deleted the active list, switch to any remaining one.
   if (state.activeListId === listId) {
     state.activeListId = Object.keys(state.lists)[0];
   }
@@ -183,10 +189,9 @@ function deleteList(listId) {
 function setActiveList(listId) {
   if (!state.lists[listId]) return;
   state.activeListId = listId;
-  // Clear transient per-list UI state when switching.
   ui.editingId = null;
   ui.addingSubtaskTo = null;
-  // Search persists across lists intentionally (it's a UI filter, not list data).
+  ui.openMenuTaskId = null;
   saveState();
 }
 
@@ -234,12 +239,10 @@ function loadState() {
 
   // ---- Normal v2 load -------------------------------------------------------------------------
   if (parsed && typeof parsed === 'object' && parsed.lists && typeof parsed.lists === 'object') {
-    // Theme.
     if (typeof parsed.theme === 'string' && THEMES.includes(parsed.theme)) {
       state.theme = parsed.theme;
     }
 
-    // Lists.
     const cleanLists = {};
     for (const [id, list] of Object.entries(parsed.lists)) {
       if (!list || typeof list !== 'object') continue;
@@ -259,7 +262,6 @@ function loadState() {
 
     state.lists = cleanLists;
 
-    // Active list — fall back to first available if the stored id is missing.
     if (typeof parsed.activeListId === 'string' && cleanLists[parsed.activeListId]) {
       state.activeListId = parsed.activeListId;
     } else {
@@ -268,11 +270,9 @@ function loadState() {
     return;
   }
 
-  // Anything else — start fresh.
   bootstrapFreshState();
 }
 
-/** Ensures at least one list exists. Used on fresh load and on unrecoverable state. */
 function bootstrapFreshState() {
   const id = generateId();
   state.lists = {
@@ -281,10 +281,6 @@ function bootstrapFreshState() {
   state.activeListId = id;
 }
 
-/**
- * Validate and normalize a task array. Drops malformed entries and orphaned subtasks.
- * `source` may be a list's tasks array (load) or an imported file's tasks array.
- */
 function sanitizeTasks(source) {
   const cleaned = source
     .filter((t) => t && typeof t === 'object' && typeof t.text === 'string')
@@ -297,7 +293,6 @@ function sanitizeTasks(source) {
       createdAt: typeof t.createdAt === 'number' ? t.createdAt : Date.now(),
     }));
 
-  // Drop orphaned subtasks (parentId points at a task not present in this set).
   const ids = new Set(cleaned.map((t) => t.id));
   return cleaned.filter((t) => t.parentId === null || ids.has(t.parentId));
 }
@@ -330,9 +325,6 @@ function setTheme(theme) {
 
 /* ================================================================================================
    TASK HELPERS
-   ------------------------------------------------------------------------------------------------
-   These operate on the ACTIVE LIST. Anything that needs a specific list's tasks accesses
-   `state.lists[listId].tasks` directly.
    ================================================================================================ */
 
 function findTask(id) {
@@ -351,21 +343,12 @@ function childrenOf(tasks, parentId) {
     .sort((a, b) => a.createdAt - b.createdAt);
 }
 
-/**
- * Build the render tree for a section: [{ task, number, children: [...] }, ...].
- * Numbers are assigned by position: top-level tasks share one continuous sequence across
- * all sections; a task's children nest under its number (N.1, N.2, ...).
- */
 function buildRenderTree(tasks, section, counter) {
   const nodes = [];
   for (const task of topLevelTasks(tasks, section)) {
     const number = String(counter.value);
     counter.value += 1;
-    nodes.push({
-      task,
-      number,
-      children: buildChildNodes(tasks, task.id, number),
-    });
+    nodes.push({ task, number, children: buildChildNodes(tasks, task.id, number) });
   }
   return nodes;
 }
@@ -375,11 +358,7 @@ function buildChildNodes(tasks, parentId, parentNumber) {
   const children = childrenOf(tasks, parentId);
   children.forEach((task, index) => {
     const number = `${parentNumber}.${index + 1}`;
-    nodes.push({
-      task,
-      number,
-      children: buildChildNodes(tasks, task.id, number),
-    });
+    nodes.push({ task, number, children: buildChildNodes(tasks, task.id, number) });
   });
   return nodes;
 }
@@ -445,10 +424,47 @@ function moveTask(id, section) {
 
 
 /* ================================================================================================
-   SEARCH
+   SHARED ACTION DISPATCHER
    ------------------------------------------------------------------------------------------------
-   A task is visible if its own text matches, OR any of its descendants match. When a descendant
-   matches, its ancestors are shown too.
+   Every task action routes through here. The desktop inline controls AND the mobile menu items
+   call the same dispatcher, so there is exactly one implementation of each action.
+
+   `closeMenuFirst` is used by the menu path to close the menu before performing the action, so
+   the menu does not linger if the action re-renders the row.
+   ================================================================================================ */
+
+const ACTIONS = {
+  edit: (taskId) => {
+    ui.editingId = taskId;
+    ui.addingSubtaskTo = null;
+    ui.openMenuTaskId = null;
+    render();
+  },
+  subtask: (taskId) => {
+    ui.addingSubtaskTo = ui.addingSubtaskTo === taskId ? null : taskId;
+    ui.editingId = null;
+    ui.openMenuTaskId = null;
+    render();
+  },
+  move: (taskId, section) => {
+    moveTask(taskId, section);
+    ui.openMenuTaskId = null;
+    render();
+  },
+  remove: (taskId) => {
+    removeTask(taskId);
+    ui.openMenuTaskId = null;
+    render();
+  },
+  toggleDone: (taskId) => {
+    toggleDone(taskId);
+    render();
+  },
+};
+
+
+/* ================================================================================================
+   SEARCH
    ================================================================================================ */
 
 function visibleIdsForSearch(tasks, query) {
@@ -531,10 +547,7 @@ function renderNode(node, visibleIds) {
   check.setAttribute('aria-label', task.done ? 'Mark as not done' : 'Mark as done');
   check.setAttribute('aria-pressed', task.done ? 'true' : 'false');
   check.textContent = task.done ? '✓' : '';
-  check.addEventListener('click', () => {
-    toggleDone(task.id);
-    render();
-  });
+  check.addEventListener('click', () => ACTIONS.toggleDone(task.id));
   row.appendChild(check);
 
   // --- Number ---
@@ -584,69 +597,22 @@ function renderNode(node, visibleIds) {
     textEl.textContent = task.text;
     textEl.addEventListener('dblclick', () => {
       ui.editingId = task.id;
+      ui.openMenuTaskId = null;
       render();
     });
     row.appendChild(textEl);
   }
 
-  // --- Actions ---
-  const actions = document.createElement('div');
-  actions.className = 'task-actions';
+  // --- Desktop inline actions ---
+  row.appendChild(renderInlineActions(task));
 
-  const editBtn = document.createElement('button');
-  editBtn.type = 'button';
-  editBtn.className = 'task-action';
-  editBtn.setAttribute('aria-label', 'Edit task');
-  editBtn.title = 'Edit';
-  editBtn.textContent = '✎';
-  editBtn.addEventListener('click', () => {
-    ui.editingId = task.id;
-    render();
-  });
-  actions.appendChild(editBtn);
-
-  const subtaskBtn = document.createElement('button');
-  subtaskBtn.type = 'button';
-  subtaskBtn.className = 'task-action';
-  subtaskBtn.setAttribute('aria-label', 'Add subtask');
-  subtaskBtn.title = 'Add subtask';
-  subtaskBtn.textContent = '↳';
-  subtaskBtn.addEventListener('click', () => {
-    ui.addingSubtaskTo = ui.addingSubtaskTo === task.id ? null : task.id;
-    render();
-  });
-  actions.appendChild(subtaskBtn);
-
-  const moveSelect = document.createElement('select');
-  moveSelect.className = 'task-move-select';
-  moveSelect.setAttribute('aria-label', 'Move task to another section');
-  moveSelect.title = 'Move to…';
-  for (const s of SECTIONS) {
-    const opt = document.createElement('option');
-    opt.value = s;
-    opt.textContent = SECTION_LABELS[s];
-    if (s === task.section) opt.selected = true;
-    moveSelect.appendChild(opt);
+  // --- Mobile ⋯ button and its menu ---
+  row.appendChild(renderMenuButton(task));
+  const menu = renderActionMenu(task);
+  if (menu) {
+    row.appendChild(menu);
   }
-  moveSelect.addEventListener('change', () => {
-    moveTask(task.id, moveSelect.value);
-    render();
-  });
-  actions.appendChild(moveSelect);
 
-  const removeBtn = document.createElement('button');
-  removeBtn.type = 'button';
-  removeBtn.className = 'task-action task-action-danger';
-  removeBtn.setAttribute('aria-label', 'Remove task');
-  removeBtn.title = 'Remove';
-  removeBtn.textContent = '✕';
-  removeBtn.addEventListener('click', () => {
-    removeTask(task.id);
-    render();
-  });
-  actions.appendChild(removeBtn);
-
-  row.appendChild(actions);
   item.appendChild(row);
 
   // --- Add-subtask inline input ---
@@ -702,6 +668,220 @@ function renderNode(node, visibleIds) {
   return item;
 }
 
+/**
+ * Desktop inline action controls. Always rendered into the DOM; hidden by CSS below the
+ * breakpoint. This keeps desktop markup byte-identical to the pre-fix version.
+ */
+function renderInlineActions(task) {
+  const actions = document.createElement('div');
+  actions.className = 'task-actions';
+
+  const editBtn = document.createElement('button');
+  editBtn.type = 'button';
+  editBtn.className = 'task-action';
+  editBtn.setAttribute('aria-label', 'Edit task');
+  editBtn.title = 'Edit';
+  editBtn.textContent = '✎';
+  editBtn.addEventListener('click', () => ACTIONS.edit(task.id));
+  actions.appendChild(editBtn);
+
+  const subtaskBtn = document.createElement('button');
+  subtaskBtn.type = 'button';
+  subtaskBtn.className = 'task-action';
+  subtaskBtn.setAttribute('aria-label', 'Add subtask');
+  subtaskBtn.title = 'Add subtask';
+  subtaskBtn.textContent = '↳';
+  subtaskBtn.addEventListener('click', () => ACTIONS.subtask(task.id));
+  actions.appendChild(subtaskBtn);
+
+  const moveSelect = document.createElement('select');
+  moveSelect.className = 'task-move-select';
+  moveSelect.setAttribute('aria-label', 'Move task to another section');
+  moveSelect.title = 'Move to…';
+  for (const s of SECTIONS) {
+    const opt = document.createElement('option');
+    opt.value = s;
+    opt.textContent = SECTION_LABELS[s];
+    if (s === task.section) opt.selected = true;
+    moveSelect.appendChild(opt);
+  }
+  moveSelect.addEventListener('change', () => ACTIONS.move(task.id, moveSelect.value));
+  actions.appendChild(moveSelect);
+
+  const removeBtn = document.createElement('button');
+  removeBtn.type = 'button';
+  removeBtn.className = 'task-action task-action-danger';
+  removeBtn.setAttribute('aria-label', 'Remove task');
+  removeBtn.title = 'Remove';
+  removeBtn.textContent = '✕';
+  removeBtn.addEventListener('click', () => ACTIONS.remove(task.id));
+  actions.appendChild(removeBtn);
+
+  return actions;
+}
+
+/** The ⋯ button. Hidden by CSS at/above the breakpoint. */
+function renderMenuButton(task) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'task-menu-button';
+  btn.setAttribute('aria-label', 'Task actions');
+  btn.setAttribute('aria-haspopup', 'menu');
+  const isOpen = ui.openMenuTaskId === task.id;
+  btn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+  btn.textContent = '⋯';
+  btn.dataset.menuButtonFor = task.id;
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMenu(task.id);
+  });
+  return btn;
+}
+
+/**
+ * The mobile action menu. Rendered only when this task's menu is the open one — so at most one
+ * exists in the DOM at a time, and no cleanup is needed when the open task changes.
+ */
+function renderActionMenu(task) {
+  if (ui.openMenuTaskId !== task.id) return null;
+
+  const menu = document.createElement('div');
+  menu.className = 'task-action-menu';
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', 'Task actions');
+
+  // Edit
+  menu.appendChild(menuItem('✎', 'Edit', () => ACTIONS.edit(task.id)));
+
+  // Add subtask
+  menu.appendChild(menuItem('↳', 'Add subtask', () => ACTIONS.subtask(task.id)));
+
+  // Move group — only the OTHER sections.
+  const otherSections = SECTIONS.filter((s) => s !== task.section);
+  if (otherSections.length > 0) {
+    const label = document.createElement('div');
+    label.className = 'task-menu-group-label';
+    label.textContent = 'Move to';
+    menu.appendChild(label);
+
+    for (const s of otherSections) {
+      menu.appendChild(menuItem('→', SECTION_MOVE_LABELS[s], () => ACTIONS.move(task.id, s)));
+    }
+  }
+
+  // Divider + remove
+  const divider = document.createElement('div');
+  divider.className = 'task-menu-divider';
+  divider.setAttribute('role', 'separator');
+  menu.appendChild(divider);
+
+  const removeItem = menuItem('✕', 'Remove', () => ACTIONS.remove(task.id));
+  removeItem.classList.add('task-menu-item-danger');
+  menu.appendChild(removeItem);
+
+  // Flip upward if there is not enough room below. Done after the menu is in the DOM (in
+  // positionMenu), not here — we need to measure its rendered height.
+  return menu;
+}
+
+function menuItem(icon, labelText, onClick) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'task-menu-item';
+  btn.setAttribute('role', 'menuitem');
+
+  const iconEl = document.createElement('span');
+  iconEl.className = 'task-menu-item-icon';
+  iconEl.setAttribute('aria-hidden', 'true');
+  iconEl.textContent = icon;
+  btn.appendChild(iconEl);
+
+  const labelEl = document.createElement('span');
+  labelEl.textContent = labelText;
+  btn.appendChild(labelEl);
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    onClick();
+  });
+
+  return btn;
+}
+
+
+/* ================================================================================================
+   MENU OPEN / CLOSE
+   ================================================================================================ */
+
+/**
+ * Toggle the ⋯ menu for a task. Opening one closes any other (only one open at a time).
+ * After opening, positionMenu() runs on the next frame to measure and flip if needed.
+ */
+function toggleMenu(taskId) {
+  if (ui.openMenuTaskId === taskId) {
+    closeMenu({ returnFocus: true });
+    return;
+  }
+  ui.openMenuTaskId = taskId;
+  render();
+  // Position after the menu exists in the DOM and has been laid out.
+  requestAnimationFrame(() => positionMenu(taskId));
+}
+
+/**
+ * Close the open menu, if any.
+ *   returnFocus: move focus back to the ⋯ button for the task that had the menu open.
+ */
+function closeMenu({ returnFocus = false } = {}) {
+  const wasOpenFor = ui.openMenuTaskId;
+  if (!wasOpenFor) return;
+  ui.openMenuTaskId = null;
+  render();
+
+  if (returnFocus) {
+    // The button now exists in the fresh DOM. Find it by its data attribute.
+    const btn = document.querySelector(`[data-menu-button-for="${cssEscape(wasOpenFor)}"]`);
+    if (btn) btn.focus();
+  }
+}
+
+/**
+ * Flip the open menu upward if it would overflow the viewport bottom.
+ * Called once after the menu is rendered.
+ */
+function positionMenu(taskId) {
+  const menu = document.querySelector('.task-action-menu');
+  if (!menu) return;
+
+  // Reset any prior flip so we measure the natural (downward) position.
+  menu.classList.remove('is-flipped');
+
+  const rect = menu.getBoundingClientRect();
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+
+  // If the menu's bottom edge is below the viewport, flip up.
+  if (rect.bottom > viewportHeight - 8) {
+    menu.classList.add('is-flipped');
+  }
+
+  // Horizontal overflow guard: if the menu's right edge is off-screen, pull it back in.
+  const vw = window.innerWidth || document.documentElement.clientWidth;
+  if (rect.right > vw - 8) {
+    menu.style.right = '0';
+  }
+}
+
+/**
+ * Escape a string for use in a querySelector attribute selector. Handles ids with characters
+ * that would otherwise break the selector. Falls back to CSS.escape when available.
+ */
+function cssEscape(value) {
+  if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+    return CSS.escape(value);
+  }
+  return String(value).replace(/["\\]/g, '\\$&');
+}
+
 
 /* ================================================================================================
    LIST SWITCHER RENDERING
@@ -719,12 +899,9 @@ function renderListSwitcher() {
     select.appendChild(opt);
   }
 
-  // Disable delete when only one list remains (per the build brief: never delete the last list).
   const onlyOne = Object.keys(state.lists).length <= 1;
   dom.listDeleteButton.disabled = onlyOne;
-  dom.listDeleteButton.title = onlyOne
-    ? 'Cannot delete the only list'
-    : 'Delete list';
+  dom.listDeleteButton.title = onlyOne ? 'Cannot delete the only list' : 'Delete list';
 }
 
 
@@ -776,10 +953,6 @@ function handlePasteAdd() {
 
 /* ================================================================================================
    EXPORT / IMPORT
-   ------------------------------------------------------------------------------------------------
-   Export: the ACTIVE list only, as JSON.
-   Import: adds the file's tasks as a NEW list. Never touches existing lists. Name is prompted,
-   pre-filled from the filename.
    ================================================================================================ */
 
 function handleExport() {
@@ -830,10 +1003,9 @@ function handleImportFile(file) {
       return;
     }
 
-    // Pre-fill the prompt with the file's list name, or the filename if absent.
     const fallback = parsed.listName || deriveListNameFromFile(file.name) || 'Imported list';
     const entered = window.prompt('Name for the imported list:', uniqueListName(fallback));
-    if (entered === null) return; // user cancelled
+    if (entered === null) return;
 
     const finalName = String(entered).trim() || uniqueListName(fallback);
     const sanitizedTasks = sanitizeTasks(parsed.tasks);
@@ -841,10 +1013,10 @@ function handleImportFile(file) {
     const newList = createList(finalName);
     newList.tasks = sanitizedTasks;
 
-    // Switch to the new list so the import is visible.
     state.activeListId = newList.id;
     ui.editingId = null;
     ui.addingSubtaskTo = null;
+    ui.openMenuTaskId = null;
 
     saveState();
     renderListSwitcher();
@@ -866,7 +1038,7 @@ function handleImportFile(file) {
 
 
 /* ================================================================================================
-   LIST ACTIONS (create / rename / delete / switch)
+   LIST ACTIONS
    ================================================================================================ */
 
 function handleListSwitch(listId) {
@@ -883,6 +1055,7 @@ function handleListNew() {
   state.activeListId = list.id;
   ui.editingId = null;
   ui.addingSubtaskTo = null;
+  ui.openMenuTaskId = null;
   saveState();
   renderListSwitcher();
   render();
@@ -894,7 +1067,7 @@ function handleListRename() {
   if (entered === null) return;
   const name = String(entered).trim();
   if (!name) return;
-  // Allow renaming to its own name; only dedupe against OTHER lists.
+
   const others = Object.values(state.lists)
     .filter((l) => l.id !== list.id)
     .map((l) => l.name);
@@ -910,16 +1083,16 @@ function handleListRename() {
 }
 
 function handleListDelete() {
-  if (Object.keys(state.lists).length <= 1) return; // guarded, but check anyway
+  if (Object.keys(state.lists).length <= 1) return;
   const list = activeList();
   const ok = window.confirm(
     `Delete the list "${list.name}" and all of its tasks?\n\nThis cannot be undone.`
   );
   if (!ok) return;
-  const wasActive = list.id;
-  deleteList(wasActive);
+  deleteList(list.id);
   ui.editingId = null;
   ui.addingSubtaskTo = null;
+  ui.openMenuTaskId = null;
   saveState();
   renderListSwitcher();
   render();
@@ -932,17 +1105,13 @@ function handleListDelete() {
 
 function wireEvents() {
   // ---- List switcher ----
-  dom.listSelect.addEventListener('change', () => {
-    handleListSwitch(dom.listSelect.value);
-  });
+  dom.listSelect.addEventListener('change', () => handleListSwitch(dom.listSelect.value));
   dom.listNewButton.addEventListener('click', handleListNew);
   dom.listRenameButton.addEventListener('click', handleListRename);
   dom.listDeleteButton.addEventListener('click', handleListDelete);
 
   // ---- Theme ----
-  dom.themeSelect.addEventListener('change', () => {
-    setTheme(dom.themeSelect.value);
-  });
+  dom.themeSelect.addEventListener('change', () => setTheme(dom.themeSelect.value));
 
   // ---- Quick add ----
   const quickAddCommit = () => {
@@ -993,22 +1162,53 @@ function wireEvents() {
 
   // ---- Export / import ----
   dom.exportButton.addEventListener('click', handleExport);
-  dom.importButton.addEventListener('click', () => {
-    dom.importFile.click();
-  });
+  dom.importButton.addEventListener('click', () => dom.importFile.click());
   dom.importFile.addEventListener('change', () => {
     const file = dom.importFile.files && dom.importFile.files[0];
     if (file) handleImportFile(file);
     dom.importFile.value = '';
   });
 
-  // ---- Global Escape ----
+  // ---- Global keyboard: Escape ----
+  // One handler covers: canceling an inline edit, canceling add-subtask, and closing the open menu.
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && (ui.editingId || ui.addingSubtaskTo)) {
+    if (e.key !== 'Escape') return;
+
+    if (ui.openMenuTaskId) {
+      e.preventDefault();
+      closeMenu({ returnFocus: true });
+      return;
+    }
+    if (ui.editingId || ui.addingSubtaskTo) {
       ui.editingId = null;
       ui.addingSubtaskTo = null;
       render();
     }
+  });
+
+  // ---- Click outside closes the menu ----
+  // Attached at document level, and only acts when a menu is open. Clicks inside a menu are
+  // stopped by the menu-item and menu-button handlers before reaching here.
+  document.addEventListener('click', (e) => {
+    if (!ui.openMenuTaskId) return;
+    // If the click landed inside an open menu or on a ⋯ button, it was handled there.
+    if (e.target.closest('.task-action-menu')) return;
+    if (e.target.closest('.task-menu-button')) return;
+    closeMenu({ returnFocus: false });
+  });
+
+  // ---- Window resize / orientation change ----
+  // If the viewport crosses the breakpoint while a menu is open, close it so the menu does not
+  // linger in a layout that no longer renders it.
+  let resizeRaf = 0;
+  window.addEventListener('resize', () => {
+    if (resizeRaf) cancelAnimationFrame(resizeRaf);
+    resizeRaf = requestAnimationFrame(() => {
+      resizeRaf = 0;
+      if (ui.openMenuTaskId) {
+        closeMenu({ returnFocus: false });
+      }
+    });
   });
 }
 
