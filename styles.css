@@ -20,32 +20,22 @@
      9. Paste box
     10. Footer
     11. Buttons & shared controls
-    12. Utility
-    13. Responsive
+    12. Task action menu (mobile ⋯ menu)
+    13. Utility
+    14. Responsive
+
+   Responsive strategy:
+     - At/above 640px: task actions are inline (edit, subtask, move <select>, delete).
+       The ⋯ button is hidden, the action menu is never rendered.
+     - Below 640px: inline actions are hidden, a single ⋯ button is shown, and the action menu
+       carries every action. This frees the text column so mid-word breaks cannot occur.
    ================================================================================================ */
 
 
 /* ================================================================================================
    1. THEME TOKENS
-   ------------------------------------------------------------------------------------------------
-   Every visual value that changes between themes is a custom property here. Layout values (spacing,
-   radii, sizes) also live here so a theme can adjust them; themes that don't override a value
-   inherit the layout defaults from :root.
-
-   Token groups:
-     --bg-*        page background (solid, or gradient stops)
-     --panel-*     large surface (app shell, sections, paste box)
-     --card-*      individual task card surface
-     --text-*      text colors
-     --accent-*    primary interactive color
-     --done-*      completed-task color
-     --border-*    hairline borders
-     --shadow-*    elevation
-     --radius-*    corner radii
-     --space-*     spacing scale
    ================================================================================================ */
 
-/* ---- Layout defaults, inherited by all themes ------------------------------------------------ */
 :root {
   --radius-sm: 10px;
   --radius-md: 14px;
@@ -65,11 +55,14 @@
   --shell-max-width: 760px;
   --transition-fast: 120ms ease;
   --transition-med: 220ms ease;
+
+  /* Breakpoint where inline actions collapse into the ⋯ menu. Kept as a token for reference;
+     media queries cannot read custom properties, so the value is duplicated in section 14. */
+  --actions-breakpoint: 640px;
 }
 
 /* ================================================================================================
    TWILIGHT BRAND (default)
-   Indigo-to-teal gradient background, frosted glassmorphism cards, white text, glowing teal accents.
    ================================================================================================ */
 [data-theme="twilight"] {
   --bg-gradient: linear-gradient(135deg, #1a1040 0%, #2d1b69 35%, #1f4f6b 70%, #0f6b5c 100%);
@@ -106,11 +99,16 @@
 
   --section-title-color: #ffffff;
   --danger: #ff6b8a;
+
+  /* Menu surface — opaque enough to sit above cards without washing out. */
+  --menu-bg: rgba(30, 22, 70, 0.98);
+  --menu-border: rgba(255, 255, 255, 0.16);
+  --menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --menu-divider: rgba(255, 255, 255, 0.1);
 }
 
 /* ================================================================================================
    MIDNIGHT TERMINAL
-   Near-black background, phosphor-green accents, monospace task numbers, subtle terminal feel.
    ================================================================================================ */
 [data-theme="terminal"] {
   --bg-gradient: none;
@@ -148,14 +146,17 @@
   --section-title-color: #33ff99;
   --danger: #ff5c7a;
 
-  /* Terminal theme uses monospace for numbers and section counts. */
   --number-font: var(--font-mono);
   --font-body: var(--font-mono);
+
+  --menu-bg: #0c1113;
+  --menu-border: #1e2c2a;
+  --menu-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
+  --menu-divider: #1a2624;
 }
 
 /* ================================================================================================
    CLEAN PAPER
-   Warm off-white background, soft shadows, charcoal text, one warm terracotta accent, calm, minimal.
    ================================================================================================ */
 [data-theme="paper"] {
   --bg-gradient: none;
@@ -192,12 +193,15 @@
 
   --section-title-color: #2f2a24;
   --danger: #b04a3a;
+
+  --menu-bg: #fffdf9;
+  --menu-border: #e0d5c4;
+  --menu-shadow: 0 10px 28px rgba(60, 45, 30, 0.16);
+  --menu-divider: #ece3d5;
 }
 
 /* ================================================================================================
    LuMi AVOCADO
-   Soft cream background, avocado-green accents with darker green text, chunky rounded cards,
-   friendly and cheerful.
    ================================================================================================ */
 [data-theme="avocado"] {
   --bg-gradient: none;
@@ -235,10 +239,14 @@
   --section-title-color: #2f3a1c;
   --danger: #c2554a;
 
-  /* Chunky look: bigger radii than the default. */
   --radius-sm: 14px;
   --radius-md: 20px;
   --radius-lg: 26px;
+
+  --menu-bg: #ffffff;
+  --menu-border: #dbe2bd;
+  --menu-shadow: 0 12px 32px rgba(90, 100, 50, 0.18);
+  --menu-divider: #e3e8c4;
 }
 
 /* ================================================================================================
@@ -291,9 +299,6 @@ body {
 
 /* ================================================================================================
    4. HEADER
-   ------------------------------------------------------------------------------------------------
-   Three regions: brand (icon + title) on the left, then a controls row holding the list switcher
-   and the theme switcher. On narrow screens the controls wrap below the brand.
    ================================================================================================ */
 
 .app-header {
@@ -370,7 +375,7 @@ body {
   border-radius: var(--radius-sm);
 }
 
-/* ---- Icon buttons (list new / rename / delete) ------------------------------------------------ */
+/* ---- Icon buttons ---------------------------------------------------------------------------- */
 
 .icon-button {
   width: 26px;
@@ -407,7 +412,7 @@ body {
   color: var(--danger);
 }
 
-/* ---- Theme switcher --------------------------------------------------------------------------- */
+/* ---- Theme switcher -------------------------------------------------------------------------- */
 
 .theme-select {
   font-family: inherit;
@@ -658,6 +663,7 @@ body {
 }
 
 .task-row {
+  position: relative; /* anchors the absolutely-positioned action menu */
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -712,7 +718,7 @@ body {
   color: #ffffff;
 }
 
-/* Number — derived at render time, monospace in themes that request it. */
+/* Number — derived at render time. Never wraps. */
 .task-number {
   flex: 0 0 auto;
   font-family: var(--number-font, var(--font-body));
@@ -721,20 +727,31 @@ body {
   color: var(--text-secondary);
   min-width: 3.25em;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .task-item.is-done .task-number {
   color: var(--done-text);
 }
 
-/* Task text. */
+/* Task text.
+
+   Wrapping rule (the core of the mobile fix):
+     word-break: normal      -> never break mid-word for normal text
+     overflow-wrap: break-word -> allow breaking a truly unbreakable string (long URL)
+     min-width: 0            -> let the flex item shrink instead of forcing overflow
+
+   The `white-space: pre-wrap` from the earlier version is preserved so multi-line task text
+   (e.g. the imported transcript) still renders with its line breaks. `pre-wrap` implies
+   `word-break: normal` behavior for wrapping, and works with `overflow-wrap`. */
 .task-text {
   flex: 1 1 auto;
   min-width: 0;
   font-size: 1rem;
   color: var(--text-primary);
-  word-break: break-word;
   white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 .task-item.is-done .task-text {
@@ -762,7 +779,8 @@ body {
   box-shadow: var(--accent-glow);
 }
 
-/* Per-task action controls. */
+/* ---- Inline action controls (desktop) -------------------------------------------------------- */
+
 .task-actions {
   flex: 0 0 auto;
   display: flex;
@@ -800,7 +818,7 @@ body {
   color: var(--danger);
 }
 
-/* Move-between-sections control — a small <select>. */
+/* Move-between-sections control — desktop uses a <select>. */
 .task-move-select {
   font-family: inherit;
   font-size: 0.75rem;
@@ -820,6 +838,49 @@ body {
 .task-move-select:focus-visible {
   outline: none;
   box-shadow: var(--accent-glow);
+}
+
+/* ---- ⋯ menu button (mobile only) ------------------------------------------------------------- */
+
+.task-menu-button {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1.125rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.task-menu-button:hover {
+  background: var(--card-bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.task-menu-button:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+}
+
+.task-menu-button[aria-expanded="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* The ⋯ button and its menu are hidden at/above the breakpoint; inline actions are hidden below. */
+.task-menu-button,
+.task-action-menu {
+  display: none;
 }
 
 /* Subtask container — indented under its parent. */
@@ -995,7 +1056,138 @@ body {
 }
 
 /* ================================================================================================
-   12. UTILITY
+   12. TASK ACTION MENU
+   ------------------------------------------------------------------------------------------------
+   Mobile-only dropdown, anchored to the right edge of the task row. Rendered by app.js only when
+   the viewport is below the breakpoint; hidden by default (see the display: none rule in §8).
+
+   Structure:
+     .task-action-menu
+       .task-menu-item           (edit)
+       .task-menu-item           (add subtask)
+       .task-menu-group-label    ("Move to")
+       .task-menu-item           (move target A)
+       .task-menu-item           (move target B)
+       .task-menu-divider
+       .task-menu-item.task-menu-item-danger  (remove)
+   ================================================================================================ */
+
+.task-action-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 50;
+  min-width: 190px;
+  max-width: min(260px, calc(100vw - 32px));
+  padding: var(--space-1);
+  background: var(--menu-bg);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--menu-shadow);
+  transform-origin: top right;
+  animation: task-menu-in var(--transition-med) both;
+}
+
+/* Flip upward when there is not enough room below (set by JS via .is-flipped). */
+.task-action-menu.is-flipped {
+  top: auto;
+  bottom: calc(100% + 6px);
+  transform-origin: bottom right;
+  animation-name: task-menu-in-up;
+}
+
+@keyframes task-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes task-menu-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.task-menu-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 0.9375rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.task-menu-item:hover {
+  background: var(--card-bg-hover);
+}
+
+.task-menu-item:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+}
+
+.task-menu-item-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+.task-menu-item:hover .task-menu-item-icon {
+  color: var(--accent);
+}
+
+/* Non-interactive label above the move targets. */
+.task-menu-group-label {
+  padding: var(--space-2) var(--space-3) var(--space-1);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.task-menu-divider {
+  height: 1px;
+  margin: var(--space-1) var(--space-2);
+  background: var(--menu-divider);
+}
+
+.task-menu-item-danger {
+  color: var(--danger);
+}
+
+.task-menu-item-danger .task-menu-item-icon {
+  color: var(--danger);
+}
+
+.task-menu-item-danger:hover {
+  background: var(--card-bg-hover);
+  color: var(--danger);
+}
+
+/* ================================================================================================
+   13. UTILITY
    ================================================================================================ */
 
 .visually-hidden {
@@ -1010,7 +1202,6 @@ body {
   border: 0;
 }
 
-/* Respect users who prefer reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   * {
     transition-duration: 0.01ms !important;
@@ -1019,13 +1210,55 @@ body {
 }
 
 /* ================================================================================================
-   13. RESPONSIVE
+   14. RESPONSIVE
    ------------------------------------------------------------------------------------------------
-   The layout is already a single column at every width. These rules only adjust density and tap
-   targets. 360px is the stated floor; 1440px is the stated ceiling.
+   Two breakpoints:
+
+     max-width: 639.98px  -> action menu mode. Inline actions hidden, ⋯ button shown.
+     max-width: 420px     -> density adjustments (spacing, tap-target sizes).
+     min-width: 900px     -> shell breathing room.
+
+   639.98px is used rather than 640px so the switch lands cleanly just below the breakpoint at
+   fractional device pixel ratios (avoids the 1px-overlap class of bugs on some phones).
    ================================================================================================ */
 
-/* Narrow phones — tighten spacing, keep tap targets large. */
+/* ---- Action menu mode (below 640px) ---------------------------------------------------------- */
+
+@media (max-width: 639.98px) {
+  /* Hide the inline action controls. */
+  .task-actions {
+    display: none;
+  }
+
+  /* Show the ⋯ button and its menu. */
+  .task-menu-button {
+    display: inline-flex;
+  }
+
+  .task-action-menu {
+    display: block;
+  }
+
+  /* The row needs the ⋯ button vertically centered at the right edge. It already is, by virtue
+     of flex alignment — no extra rule needed beyond flex: 0 0 auto on the button itself. */
+  .task-row {
+    gap: var(--space-2);
+  }
+
+  /* Free as much horizontal space as possible for the text. */
+  .task-text {
+    padding-right: var(--space-1);
+  }
+
+  /* On phones, give the ⋯ button a comfortable tap target without stretching the row. */
+  .task-menu-button {
+    width: 38px;
+    height: 38px;
+  }
+}
+
+/* ---- Density adjustments (below 420px) ------------------------------------------------------- */
+
 @media (max-width: 420px) {
   .app-shell {
     padding: var(--space-3) var(--space-3) var(--space-5);
@@ -1036,7 +1269,6 @@ body {
     font-size: 1.25rem;
   }
 
-  /* Header controls wrap below the brand and take the full width. */
   .app-header-controls {
     width: 100%;
     justify-content: space-between;
@@ -1056,15 +1288,6 @@ body {
     font-size: 0.75rem;
   }
 
-  .task-actions {
-    gap: 2px;
-  }
-
-  .task-action {
-    width: 28px;
-    height: 28px;
-  }
-
   .task-children {
     padding-left: var(--space-4);
   }
@@ -1073,14 +1296,23 @@ body {
     padding-left: var(--space-4);
   }
 
-  /* Touch-friendly: comfortable heights on the header controls. */
   .theme-select {
     padding: var(--space-2) var(--space-3);
   }
+
+  /* Tighter menu on small phones, still comfortably tappable. */
+  .task-action-menu {
+    min-width: 170px;
+  }
+
+  .task-menu-item {
+    padding: var(--space-2) var(--space-3);
+    font-size: 0.9375rem;
+  }
 }
 
-/* Wider screens — the shell is centered and capped, so no column change is needed.
-   This block exists as the explicit hook for Stage 2's two-column layout, if added. */
+/* ---- Desktop breathing room (900px and up) --------------------------------------------------- */
+
 @media (min-width: 900px) {
   .app-shell {
     padding-top: var(--space-6);
