@@ -6,15 +6,18 @@
   <meta name="description" content="Online To Do List — a fast, private, offline-capable to-do list.">
   
   <!-- PWA & Mobile Web App -->
-  <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="manifest.webmanifest">
   <meta name="theme-color" content="#1a1040">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
 
   <title>Online To Do List</title>
-  <link rel="stylesheet" href="css/styles.css">
+  
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/themes.css">
 </head>
 <body>
 
@@ -193,6 +196,12 @@
 
   </div>
 
-  <script src="js/app.js"></script>
+  <!-- Scripts: loaded as plain scripts (not modules) to preserve file:// compatibility.
+       Order matters: config -> store -> render -> ui. -->
+  <script src="js/config.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/ui.js"></script>
+
 </body>
 </html>
