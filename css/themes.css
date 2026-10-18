@@ -1,0 +1,209 @@
+/* ================================================================================================
+   Online To Do List — themes.css
+   ================================================================================================
+   The four themes, and nothing else.
+
+   Each theme is a [data-theme="..."] block of CSS custom properties on the root <html> element.
+   Shared tokens that are not theme-specific (radii, spacing, fonts, shell width, transitions)
+   live in base.css under :root. The theme blocks here override or extend those tokens.
+
+   Adding a future theme requires only a new [data-theme] block in this file — no other file
+   needs to change, provided the new block sets every token the base rules read.
+
+   Theme blocks, in order:
+     - twilight  (default, Twilight Brand)
+     - terminal  (Midnight Terminal)
+     - paper     (Clean Paper)
+     - avocado   (LuMi Avocado)
+
+   The default theme is "twilight", set on <html data-theme> in index.html and re-applied from
+   localStorage by js/render.js on load (applyTheme).
+   ================================================================================================ */
+
+
+/* ================================================================================================
+   TWILIGHT BRAND (default)
+   ================================================================================================ */
+[data-theme="twilight"] {
+  --bg-gradient: linear-gradient(135deg, #1a1040 0%, #2d1b69 35%, #1f4f6b 70%, #0f6b5c 100%);
+  --bg-solid: #1a1040;
+
+  --panel-bg: rgba(255, 255, 255, 0.08);
+  --panel-border: rgba(255, 255, 255, 0.14);
+  --panel-blur: 18px;
+  --panel-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+
+  --card-bg: rgba(255, 255, 255, 0.11);
+  --card-bg-hover: rgba(255, 255, 255, 0.16);
+  --card-border: rgba(255, 255, 255, 0.12);
+  --card-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+
+  --text-primary: #f4f7fb;
+  --text-secondary: rgba(244, 247, 251, 0.72);
+  --text-muted: rgba(244, 247, 251, 0.48);
+
+  --accent: #2fe6d0;
+  --accent-hover: #5cf0dd;
+  --accent-text: #06231f;
+  --accent-glow: 0 0 0 3px rgba(47, 230, 208, 0.22);
+  --accent-soft: rgba(47, 230, 208, 0.16);
+
+  --done: #35d07f;
+  --done-soft: rgba(53, 208, 127, 0.2);
+  --done-text: #d9f7e6;
+
+  --border-hairline: rgba(255, 255, 255, 0.1);
+  --input-bg: rgba(255, 255, 255, 0.09);
+  --input-border: rgba(255, 255, 255, 0.16);
+  --input-placeholder: rgba(244, 247, 251, 0.42);
+
+  --section-title-color: #ffffff;
+  --danger: #ff6b8a;
+
+  --menu-bg: rgba(30, 22, 70, 0.98);
+  --menu-border: rgba(255, 255, 255, 0.16);
+  --menu-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  --menu-divider: rgba(255, 255, 255, 0.1);
+}
+
+/* ================================================================================================
+   MIDNIGHT TERMINAL
+   ================================================================================================ */
+[data-theme="terminal"] {
+  --bg-gradient: none;
+  --bg-solid: #06090a;
+
+  --panel-bg: #0d1214;
+  --panel-border: #1c2a26;
+  --panel-blur: 0px;
+  --panel-shadow: 0 0 0 1px rgba(51, 255, 153, 0.06), 0 6px 24px rgba(0, 0, 0, 0.6);
+
+  --card-bg: #0f1618;
+  --card-bg-hover: #131d20;
+  --card-border: #1e2c2a;
+  --card-shadow: none;
+
+  --text-primary: #c8f5d8;
+  --text-secondary: #8fd6a8;
+  --text-muted: #4f8a68;
+
+  --accent: #33ff99;
+  --accent-hover: #6bffb4;
+  --accent-text: #04140c;
+  --accent-glow: 0 0 0 3px rgba(51, 255, 153, 0.18);
+  --accent-soft: rgba(51, 255, 153, 0.1);
+
+  --done: #33ff99;
+  --done-soft: rgba(51, 255, 153, 0.14);
+  --done-text: #7dffbd;
+
+  --border-hairline: #16211f;
+  --input-bg: #0a1012;
+  --input-border: #1e2c2a;
+  --input-placeholder: #3f6b53;
+
+  --section-title-color: #33ff99;
+  --danger: #ff5c7a;
+
+  --number-font: var(--font-mono);
+  --font-body: var(--font-mono);
+
+  --menu-bg: #0c1113;
+  --menu-border: #1e2c2a;
+  --menu-shadow: 0 10px 28px rgba(0, 0, 0, 0.7);
+  --menu-divider: #1a2624;
+}
+
+/* ================================================================================================
+   CLEAN PAPER
+   ================================================================================================ */
+[data-theme="paper"] {
+  --bg-gradient: none;
+  --bg-solid: #f6f1e9;
+
+  --panel-bg: #fffdf9;
+  --panel-border: #e8dfd1;
+  --panel-blur: 0px;
+  --panel-shadow: 0 1px 3px rgba(60, 45, 30, 0.06), 0 8px 24px rgba(60, 45, 30, 0.06);
+
+  --card-bg: #fffdf9;
+  --card-bg-hover: #fbf6ee;
+  --card-border: #ece3d5;
+  --card-shadow: 0 1px 2px rgba(60, 45, 30, 0.05);
+
+  --text-primary: #2f2a24;
+  --text-secondary: #6a5f52;
+  --text-muted: #9a8f80;
+
+  --accent: #c8622f;
+  --accent-hover: #dd7440;
+  --accent-text: #fffdf9;
+  --accent-glow: 0 0 0 3px rgba(200, 98, 47, 0.18);
+  --accent-soft: rgba(200, 98, 47, 0.1);
+
+  --done: #5a8a4a;
+  --done-soft: rgba(90, 138, 74, 0.12);
+  --done-text: #476e3a;
+
+  --border-hairline: #e8dfd1;
+  --input-bg: #fffdf9;
+  --input-border: #ddd2c0;
+  --input-placeholder: #a89d8d;
+
+  --section-title-color: #2f2a24;
+  --danger: #b04a3a;
+
+  --menu-bg: #fffdf9;
+  --menu-border: #e0d5c4;
+  --menu-shadow: 0 10px 28px rgba(60, 45, 30, 0.16);
+  --menu-divider: #ece3d5;
+}
+
+/* ================================================================================================
+   LuMi AVOCADO
+   ================================================================================================ */
+[data-theme="avocado"] {
+  --bg-gradient: none;
+  --bg-solid: #fbf8ec;
+
+  --panel-bg: #ffffff;
+  --panel-border: #e6e2c8;
+  --panel-blur: 0px;
+  --panel-shadow: 0 2px 4px rgba(90, 100, 50, 0.06), 0 10px 28px rgba(90, 100, 50, 0.08);
+
+  --card-bg: #ffffff;
+  --card-bg-hover: #f7fbe8;
+  --card-border: #e3e8c4;
+  --card-shadow: 0 2px 0 rgba(120, 140, 60, 0.08);
+
+  --text-primary: #2f3a1c;
+  --text-secondary: #5c6b3a;
+  --text-muted: #96a373;
+
+  --accent: #8bc34a;
+  --accent-hover: #9ed05e;
+  --accent-text: #23310f;
+  --accent-glow: 0 0 0 3px rgba(139, 195, 74, 0.24);
+  --accent-soft: rgba(139, 195, 74, 0.16);
+
+  --done: #5e9b3a;
+  --done-soft: rgba(94, 155, 58, 0.16);
+  --done-text: #3f6b26;
+
+  --border-hairline: #ecefd8;
+  --input-bg: #fcfdf6;
+  --input-border: #dbe2bd;
+  --input-placeholder: #a3ae85;
+
+  --section-title-color: #2f3a1c;
+  --danger: #c2554a;
+
+  --radius-sm: 14px;
+  --radius-md: 20px;
+  --radius-lg: 26px;
+
+  --menu-bg: #ffffff;
+  --menu-border: #dbe2bd;
+  --menu-shadow: 0 12px 32px rgba(90, 100, 50, 0.18);
+  --menu-divider: #e3e8c4;
+}
