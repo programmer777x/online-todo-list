@@ -1111,14 +1111,27 @@ body {
   color: var(--text-secondary);
 }
 
-/* The item currently being dragged (the clone that follows the cursor). */
-.sortable-ghost {
-  opacity: 0.35;
+/* The clone that follows the cursor while dragging (fallback mode). Slightly raised so it
+   reads as "in flight" against the rows underneath. */
+.sortable-drag {
+  opacity: 0.9;
+  box-shadow: 0 6px 18px var(--panel-shadow, rgba(0, 0, 0, 0.35));
+  border-radius: var(--radius-md);
 }
 
 /* The original item left in place as a placeholder. */
 .sortable-chosen {
   background: var(--card-bg-hover);
+}
+
+/* Drop-target hint: the row currently under the dragged item gets a subtle accent edge so the
+   user can see where it will land. Paired with .sortable-ghost (the placeholder left behind),
+   this is the visible drop indicator that was missing. */
+.sortable-ghost {
+  border: 1px dashed var(--accent);
+  border-radius: var(--radius-md);
+  background: var(--accent-soft);
+  opacity: 0.6;
 }
 
 /* Hide the drag handle when the view is filtered by a search query. */
