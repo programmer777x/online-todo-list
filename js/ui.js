@@ -27,6 +27,8 @@
 //   the layout-thrashing and jumpy behavior of the custom solution.
 // - Added `draggable: '.task-item'` to SortableJS so it correctly identifies the `<li>` elements
 //   as the draggable units, fixing the issue where items could not be dragged at all.
+// - Fixed SortableJS nested drag targeting using `:scope > .task-item` and `.task-item .task-item`
+//   filter. Prevents the parent list from hijacking the drag of a nested subtask.
 //
 // ================================================================================================
 
@@ -233,57 +235,77 @@ function handleListDelete() {
  * Called after render() so the DOM elements exist.
  */
 function initSortable() {
-  // SortableJS provides a global `Sortable` object when loaded via <script>.
   if (typeof Sortable === 'undefined') {
     console.warn('SortableJS not loaded.');
     return;
   }
 
-  // Apply to every `.task-list` <ul> in the DOM.
-  document.querySelectorAll('.task-list').forEach((listEl) => {
-    // Avoid double-initializing if render() is called multiple times.
+  // Apply to every `.task-list` AND `.task-children` <ul> in the DOM.
+  document.querySelectorAll('.task-list, .task-children').forEach((listEl) => {
     if (listEl.sortableInstance) {
       listEl.sortableInstance.destroy();
     }
 
     listEl.sortableInstance = new Sortable(listEl, {
-      group: 'tasks',              // Allow dragging between lists in the same group
-      draggable: '.task-item',     // Explicitly define the draggable elements
-      handle: '.task-drag-handle', // Only the handle initiates the drag
+      group: 'tasks',
+      
+      // THE FIX: Only allow direct children to be dragged by this specific list.
+      // This prevents the parent list from hijacking the drag of a nested subtask.
+      draggable: ':scope > .task-item',
+      
+      // Fallback: explicitly filter out items that belong to a nested list.
+      filter: '.task-item .task-item',
+      
+      handle: '.task-drag-handle',
       animation: 150,
-      fallbackOnBody: true,        // Required for nested lists to drag reliably
-      swapThreshold: 0.65,         // Prevents jitter when near the midpoint
+      fallbackOnBody: true,
+      swapThreshold: 0.65,
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
+      forceFallback: true,
+      
       onEnd: function (evt) {
-        // Read the new order from the DOM and update the store.
         const taskId = evt.item.dataset.taskId;
+        const task = activeList().tasks.find((t) => t.id === taskId);
+        if (!task) return;
+
+        // Figure out where it was dropped.
         const targetListEl = evt.to;
-        const targetSection = targetListEl.dataset.listFor;
+        
+        // If it was dropped into a .task-children list, we need to find the parent task ID.
+        let newParentId = null;
+        if (targetListEl.classList.contains('task-children')) {
+          const parentItem = targetListEl.closest('.task-item');
+          if (parentItem) {
+            newParentId = parentItem.dataset.taskId;
+          }
+        }
+
+        // If it was dropped into a top-level .task-list, find the section.
+        let newSection = task.section;
+        const sectionEl = targetListEl.closest('.task-section');
+        if (sectionEl) {
+          newSection = sectionEl.dataset.section;
+        } else if (targetListEl.dataset.listFor) {
+          newSection = targetListEl.dataset.listFor;
+        }
+
+        // Update the task's section and parentId
+        task.section = newSection;
+        task.parentId = newParentId;
 
         // Determine the new index within the target list.
         const items = Array.from(targetListEl.querySelectorAll(':scope > .task-item'));
         const newIndex = items.indexOf(evt.item);
 
-        // Update the task's section if it moved between lists.
-        const task = activeList().tasks.find((t) => t.id === taskId);
-        if (!task) return;
-
-        task.section = targetSection;
-
         // Reassign createdAt timestamps to reflect the new order.
-        // We only re-sequence the siblings in the target list.
         const siblings = activeList().tasks
-          .filter((t) => t.section === targetSection && t.parentId === task.parentId)
+          .filter((t) => t.section === newSection && t.parentId === newParentId)
           .sort((a, b) => a.createdAt - b.createdAt);
 
-        // Remove the dragged task from the sorted array.
         const withoutDragged = siblings.filter((t) => t.id !== taskId);
-
-        // Insert it at the new index.
         withoutDragged.splice(newIndex, 0, task);
 
-        // Reassign timestamps to match the new DOM order.
         withoutDragged.forEach((t, i) => {
           t.createdAt = i + 1;
         });
