@@ -37,9 +37,10 @@
 //
 // === FIXES ===
 //
-// - Removed `e.preventDefault()` and `setPointerCapture` from the drag handle's `pointerdown`
-//   handler. Preventing default on `pointerdown` can cause the browser to swallow subsequent
-//   pointer events, breaking the drag. Global listeners on `document` handle the rest reliably.
+// - Restored `e.preventDefault()` in the drag handle's `pointerdown` handler, and removed
+//   `setPointerCapture`. Preventing default on `pointerdown` is necessary to stop the browser
+//   from hijacking the gesture for text selection or page scrolling. Relies on global `document`
+//   listeners for tracking.
 //
 // ================================================================================================
 
@@ -269,6 +270,8 @@ function wireDragToReorder() {
 
     // Do not start a drag if the row is currently being edited or has an open menu.
     if (ui.editingId === taskId || ui.openMenuTaskId === taskId) return;
+
+    e.preventDefault(); // Stop the browser from selecting text / scrolling
 
     dragState = {
       pointerId: e.pointerId,
