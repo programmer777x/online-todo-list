@@ -1088,9 +1088,10 @@ body {
 }
 
 /* ================================================================================================
-   15. DRAG-TO-REORDER
+   15. DRAG-TO-REORDER (SortableJS)
    ================================================================================================ */
 
+/* The handle that initiates the drag. SortableJS uses this via the `handle` option. */
 .task-drag-handle {
   flex: 0 0 auto;
   width: 16px;
@@ -1110,20 +1111,14 @@ body {
   color: var(--text-secondary);
 }
 
-.task-item[data-drag-state="dragging"] {
+/* The item currently being dragged (the clone that follows the cursor). */
+.sortable-ghost {
   opacity: 0.35;
 }
 
-/* Layout-agnostic drop markers: use a solid outline so the element's physical dimensions
-   are identical whether the indicator is active or not. */
-.task-item[data-drop-state="before"] > .task-row {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.task-item[data-drop-state="after"] > .task-row {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+/* The original item left in place as a placeholder. */
+.sortable-chosen {
+  background: var(--card-bg-hover);
 }
 
 /* Hide the drag handle when the view is filtered by a search query. */
