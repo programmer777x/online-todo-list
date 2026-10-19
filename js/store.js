@@ -27,6 +27,10 @@
 // - `reorderTask()` — data-layer half of drag-to-reorder. Reorders siblings within the same
 //   section and parent by reassigning `createdAt` timestamps, so the existing sort-by-`createdAt`
 //   render path needs no changes.
+// - `reparentTask()` — data-layer half of cross-list drag. Updates a task's `parentId` and
+//   `section`, so SortableJS's `onEnd` can move a subtask to a new parent or a top-level task to
+//   a different section. A follow-up `reorderTask()` places it at the exact visual index; this
+//   function only handles the parent/section change itself.
 //
 //
 //
@@ -383,6 +387,29 @@ function reorderTask(taskId, targetId, position) {
     t.createdAt = i + 1;
   });
 
+  saveState();
+  return true;
+}
+
+/**
+ * Reparent a task to a new parent (or to the top level) and a new section.
+ *
+ * This is the data-layer half of a cross-list drag. After calling this, the caller should
+ * immediately call `reorderTask()` to place the task at the exact visual index it was dropped.
+ *
+ * Returns true if the task was moved, false otherwise.
+ */
+function reparentTask(taskId, newParentId, newSection) {
+  const task = findTask(taskId);
+  if (!task) return false;
+  if (!SECTIONS.includes(newSection)) return false;
+
+  // Prevent making a task its own parent or creating a cycle (though the UI prevents this,
+  // it's good practice for the store to be defensive).
+  if (taskId === newParentId) return false;
+
+  task.parentId = newParentId || null;
+  task.section = newSection;
   saveState();
   return true;
 }
