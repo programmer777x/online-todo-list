@@ -12,6 +12,7 @@
 //   - Rendering the list switcher dropdown.
 //   - Applying the active theme to the document root.
 //   - Filtering visible tasks based on search input.
+//   - Rendering the drag handle and drop-target marker attributes used by drag-to-reorder.
 //
 // It also owns the shared `ACTIONS` dispatcher. Both the desktop inline controls and the mobile
 // menu items call these action functions, ensuring there is exactly one implementation of each
@@ -31,6 +32,9 @@
 // === ADDED ===
 //
 // - Initial creation. Extracted the rendering and view-layer logic from the original app.js.
+// - Drag handle element rendered at the start of every task row, and `data-drag-state` /
+//   `data-drop-state` attributes on the task <li>. Enables drag-to-reorder without changing
+//   the row's existing pointer-event targets.
 //
 //
 //
@@ -211,9 +215,24 @@ function renderNode(node, visibleIds) {
   const item = document.createElement('li');
   item.className = 'task-item' + (task.done ? ' is-done' : '');
   item.dataset.taskId = task.id;
+  // Set by ui.js during a drag, to style the row's dragging / drop-target states in CSS.
+  // Rendered here as stable empty values so CSS can key off [data-drag-state] / [data-drop-state].
+  item.dataset.dragState = '';
+  item.dataset.dropState = '';
 
   const row = document.createElement('div');
   row.className = 'task-row';
+
+  // --- Drag handle (initiates drag-to-reorder) ---
+  // The handle is the only pointer target that starts a drag; the rest of the row keeps its
+  // normal click/dblclick behavior for checkbox, edit, menu, etc.
+  const dragHandle = document.createElement('span');
+  dragHandle.className = 'task-drag-handle';
+  dragHandle.setAttribute('aria-hidden', 'true');
+  dragHandle.title = 'Drag to reorder';
+  dragHandle.textContent = '⋮⋮';
+  dragHandle.dataset.dragHandleFor = task.id;
+  row.appendChild(dragHandle);
 
   // --- Checkbox (complete toggle) ---
   const check = document.createElement('button');
