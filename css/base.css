@@ -21,6 +21,7 @@
     12. Task action menu (mobile ⋯ menu)
     13. Utility
     14. Responsive
+    15. Drag-to-reorder
 
    Responsive strategy:
      - Default (all widths): the ⋯ button and its menu are VISIBLE, inline actions are VISIBLE.
@@ -1084,4 +1085,56 @@ body {
   .app-shell {
     padding-top: var(--space-6);
   }
+}
+
+/* ================================================================================================
+   15. DRAG-TO-REORDER
+   ------------------------------------------------------------------------------------------------
+   Pointer-event driven drag-to-reorder. The drag handle is the only pointer target that starts a
+   drag; the rest of the row keeps its normal click / dblclick behavior.
+
+   States are driven by `data-drag-state` / `data-drop-state` on the task <li>, set from ui.js.
+     data-drag-state="dragging"     -- the row currently being dragged (rendered semi-transparent)
+     data-drop-state="before"       -- a dashed marker at the top of this row
+     data-drop-state="after"        -- a dashed marker at the bottom of this row
+   ================================================================================================ */
+
+.task-drag-handle {
+  flex: 0 0 auto;
+  width: 16px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  letter-spacing: -2px;
+  line-height: 1;
+  text-align: center;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  transition: color var(--transition-fast);
+}
+
+.task-drag-handle:hover {
+  color: var(--text-secondary);
+}
+
+.task-item[data-drag-state="dragging"] {
+  opacity: 0.35;
+}
+
+.task-item[data-drop-state="before"]::before,
+.task-item[data-drop-state="after"]::after {
+  content: '';
+  display: block;
+  height: 2px;
+  margin: 2px var(--space-2);
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+/* Hide the drag handle when the view is filtered by a search query. Reordering a filtered
+   subset has no clear meaning, and the handle would be a trap. */
+.sections:has(.task-text mark) .task-drag-handle {
+  display: none;
 }
