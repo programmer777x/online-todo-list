@@ -41,9 +41,9 @@
 //   `setPointerCapture`. Preventing default on `pointerdown` is necessary to stop the browser
 //   from hijacking the gesture for text selection or page scrolling. Relies on global `document`
 //   listeners for tracking.
-// - Fixed drag targeting for nested tasks. Uses `elementFromPoint` to correctly identify subtask
-//   rows, with a geometric fallback for gaps. Ensures parent tasks do not swallow their own
-//   subtasks as drop targets.
+// - Fixed drag targeting for nested tasks. Uses `.task-row` dimensions instead of `.task-item`
+//   so parent tasks with children don't have artificially massive bounding boxes that swallow
+//   their own subtasks.
 //
 // ================================================================================================
 
@@ -292,69 +292,45 @@ function wireDragToReorder() {
   document.addEventListener('pointermove', (e) => {
     if (!dragState || e.pointerId !== dragState.pointerId) return;
 
-    // 1. Find the element directly under the pointer.
+    // Find the `.task-row` element directly under the pointer.
     const elementUnder = document.elementFromPoint(e.clientX, e.clientY);
-    let overItem = elementUnder ? elementUnder.closest('.task-item') : null;
+    let overRow = elementUnder ? elementUnder.closest('.task-row') : null;
 
     const draggedItem = document.querySelector(`.task-item[data-task-id="${cssEscape(dragState.taskId)}"]`);
     if (!draggedItem) return;
-    
-    const validList = draggedItem.closest('.task-list');
-    if (!validList) return;
 
-    // 2. Fallback: If we are in a gap or over the `<ul>` itself, find the nearest sibling
-    //    by comparing vertical distances.
-    if (!overItem || !validList.contains(overItem)) {
-      let bestMatch = null;
-      let bestDistance = Infinity;
-
-      // Only look at direct children of the list (the top-level siblings)
-      const siblings = validList.querySelectorAll(':scope > .task-item');
-
-      for (const item of siblings) {
-        if (item.dataset.taskId === dragState.taskId) continue;
-        const rect = item.getBoundingClientRect();
-        
-        // Distance from mouse Y to the closest edge of this item
-        const distTop = Math.abs(e.clientY - rect.top);
-        const distBottom = Math.abs(e.clientY - rect.bottom);
-        const dist = Math.min(distTop, distBottom);
-
-        if (dist < bestDistance) {
-          bestDistance = dist;
-          bestMatch = item;
-        }
-      }
-      overItem = bestMatch;
-    }
-
-    // 3. Calculate before/after position
     let newDrop = null;
 
-    if (overItem && overItem.dataset.taskId !== dragState.taskId) {
-      const rect = overItem.getBoundingClientRect();
-      const midpoint = rect.top + rect.height / 2;
-      
-      // Use a small threshold to prevent rapid flipping near the exact midpoint.
-      let position;
-      if (e.clientY < midpoint - DRAG_SNAP_THRESHOLD) {
-        position = 'before';
-      } else if (e.clientY > midpoint + DRAG_SNAP_THRESHOLD) {
-        position = 'after';
-      } else {
-        // Within the dead zone: keep the existing position if it's the same item, 
-        // otherwise default to the closest half.
-        if (dragState.currentDrop && dragState.currentDrop.item === overItem) {
-          position = dragState.currentDrop.position;
-        } else {
-          position = e.clientY < midpoint ? 'before' : 'after';
-        }
-      }
+    if (overRow) {
+      const overItem = overRow.closest('.task-item');
+      if (overItem && overItem.dataset.taskId !== dragState.taskId) {
+        
+        // Measure the bounding box of the *visible row*, not the entire `<li>` (which
+        // includes nested subtasks and makes the midpoint wildly inaccurate).
+        const rect = overRow.getBoundingClientRect();
+        const midpoint = rect.top + rect.height / 2;
 
-      newDrop = { item: overItem, position };
+        // Use a small threshold to prevent rapid flipping near the exact midpoint.
+        let position;
+        if (e.clientY < midpoint - DRAG_SNAP_THRESHOLD) {
+          position = 'before';
+        } else if (e.clientY > midpoint + DRAG_SNAP_THRESHOLD) {
+          position = 'after';
+        } else {
+          // Within the dead zone: keep the existing position if it's the same item, 
+          // otherwise default to the closest half.
+          if (dragState.currentDrop && dragState.currentDrop.item === overItem) {
+            position = dragState.currentDrop.position;
+          } else {
+            position = e.clientY < midpoint ? 'before' : 'after';
+          }
+        }
+
+        newDrop = { item: overItem, position };
+      }
     }
 
-    // 4. Update the DOM if the target or position actually changed.
+    // Update the DOM if the target or position actually changed.
     const current = dragState.currentDrop;
     const changed = 
       (!current && newDrop) ||
