@@ -4,6 +4,9 @@
 //
 // Event wiring, user interactions, and app initialization for the Online To Do List.
 //
+// Drag-to-reorder auto-scroll triggers at 28% of the viewport height on mobile, and 15% on
+// desktop (screens wider than 640px).
+//
 // ================================================================================================
 //
 // === REVISIONS ===
@@ -57,6 +60,12 @@
 //   ignores `scrollSensitivity` and `scrollSpeed`. Bumped `scrollSensitivity` from 100 to 200
 //   to approximate a 30% viewport trigger zone. Tested on PC and mobile; tune the number if the
 //   zone feels too aggressive or too shallow.
+// - Auto-scroll trigger zone is now percentage-based: `getScrollSensitivity()` computes
+//   `innerHeight * 0.28` on mobile (viewport ≤ 639px) and `innerHeight * 0.15` on desktop
+//   (viewport ≥ 640px), matching the existing `ACTIONS_BREAKPOINT_PX` split. Replaces the
+//   hardcoded `scrollSensitivity: 200` with the dynamic value. Because SortableJS caches
+//   config at construction time, the value is re-evaluated on every `render()` — which runs
+//   on resize, so orientation changes are handled.
 //
 // ================================================================================================
 
@@ -276,6 +285,10 @@ function handleListDelete() {
    browsers too, where native drag autoscroll would otherwise ignore the configured
    `scrollSensitivity` and `scrollSpeed`.
 
+   `scrollSensitivity` is percentage-based (28% mobile, 15% desktop) and computed by
+   `getScrollSensitivity()` against `innerHeight` at Sortable construction time — which is
+   re-run on every `render()`, so orientation changes and window resizes are handled.
+
    Rules that still matter:
 
      1. `draggable: '> .task-item'` — the leading `>` is SortableJS's supported way to say
@@ -294,7 +307,8 @@ function handleListDelete() {
  * Initializes a SortableJS instance on every task-list container in the current DOM.
  *
  * Called from render() after every render, so each container is torn down and re-created
- * against the freshly built <li> nodes.
+ * against the freshly built <li> nodes. Because render() re-runs on window resize, the
+ * percentage-based scroll sensitivity is re-evaluated whenever the viewport changes.
  *
  * The dragged item's new position is persisted through two store calls:
  *   - If dropped in a different container, `reparentTask(taskId, newParentId, newSection)` first,
@@ -306,6 +320,14 @@ function initSortable() {
   if (typeof Sortable === 'undefined') {
     console.warn('SortableJS not loaded.');
     return;
+  }
+
+  // Determine scroll sensitivity based on screen size (28% mobile, 15% PC).
+  // We check against the existing ACTIONS_BREAKPOINT_PX (640) to match the mobile/desktop split.
+  function getScrollSensitivity() {
+    const isMobile = window.matchMedia(`(max-width: ${ACTIONS_BREAKPOINT_PX - 0.02}px)`).matches;
+    const percentage = isMobile ? 0.28 : 0.15;
+    return Math.round(window.innerHeight * percentage);
   }
 
   document.querySelectorAll('.task-list, .task-children').forEach((listEl) => {
@@ -338,12 +360,12 @@ function initSortable() {
       // Move a task past the midpoint before reordering — avoids jitter on tall rows.
       invertSwap: false,
 
-      // --- Auto-scroll (YouTube-style) ---
+      // --- Auto-scroll ---
       scroll: true,
-      forceAutoScrollFallback: true, // Run Sortable's own scroll on desktop; native drag autoscroll ignores the settings below
-      scrollSensitivity: 200,        // Fires scroll when within 200px of the viewport edge (~30% of a phone screen)
-      scrollSpeed: 15,               // Scrolls faster than default
-      bubbleScroll: true,            // Allows the window to scroll if the list itself doesn't overflow
+      forceAutoScrollFallback: true,
+      scrollSensitivity: getScrollSensitivity(), // Dynamically calculated 28% / 15%
+      scrollSpeed: 15,
+      bubbleScroll: true,
 
       onEnd(evt) {
         // If dropped in the same position, nothing changed.
