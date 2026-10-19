@@ -52,6 +52,11 @@
 //   `scrollSpeed: 15`, `bubbleScroll: true`. Dragging near the top or bottom of the viewport
 //   now scrolls the page, so a task can be dropped into a list that was off-screen when the
 //   drag started.
+// - Force fallback auto-scroll on desktop: added `forceAutoScrollFallback: true` so SortableJS
+//   uses its own scroll logic rather than relying on native browser drag auto-scroll, which
+//   ignores `scrollSensitivity` and `scrollSpeed`. Bumped `scrollSensitivity` from 100 to 200
+//   to approximate a 30% viewport trigger zone. Tested on PC and mobile; tune the number if the
+//   zone feels too aggressive or too shallow.
 //
 // ================================================================================================
 
@@ -267,6 +272,9 @@ function handleListDelete() {
    `scroll`, `scrollSensitivity`, `scrollSpeed`, and `bubbleScroll` add YouTube-style auto-scroll
    during drag. Dragging near the top or bottom edge of the viewport now scrolls the page, so a
    task can be dropped into a container that was off-screen when the drag started.
+   `forceAutoScrollFallback: true` ensures SortableJS runs its own scroll logic on desktop
+   browsers too, where native drag autoscroll would otherwise ignore the configured
+   `scrollSensitivity` and `scrollSpeed`.
 
    Rules that still matter:
 
@@ -332,9 +340,10 @@ function initSortable() {
 
       // --- Auto-scroll (YouTube-style) ---
       scroll: true,
-      scrollSensitivity: 100, // Fires scroll when within 100px of the viewport edge
-      scrollSpeed: 15,        // Scrolls faster than default
-      bubbleScroll: true,     // Allows the window to scroll if the list itself doesn't overflow
+      forceAutoScrollFallback: true, // Run Sortable's own scroll on desktop; native drag autoscroll ignores the settings below
+      scrollSensitivity: 200,        // Fires scroll when within 200px of the viewport edge (~30% of a phone screen)
+      scrollSpeed: 15,               // Scrolls faster than default
+      bubbleScroll: true,            // Allows the window to scroll if the list itself doesn't overflow
 
       onEnd(evt) {
         // If dropped in the same position, nothing changed.
