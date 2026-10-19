@@ -41,11 +41,9 @@
 //   `setPointerCapture`. Preventing default on `pointerdown` is necessary to stop the browser
 //   from hijacking the gesture for text selection or page scrolling. Relies on global `document`
 //   listeners for tracking.
-// - Replaced `elementFromPoint` with a geometric closest-row calculation. This fixes shaking and
-//   jumping when hovering in the gaps between rows, by always snapping to the single most
-//   relevant row.
-// - Replaced the global dead zone with a small dead zone at the exact midpoint to prevent
-//   micro-jitters without losing responsiveness.
+// - Replaced the `:scope > .task-item` traversal with a global `.task-row` query to prevent
+//   the indicator from disappearing due to DOM nesting quirks.
+// - Refined the midpoint calculation to use a small 4px dead zone at the exact center.
 //
 // ================================================================================================
 
@@ -275,15 +273,22 @@ function wireDragToReorder() {
     const validList = draggedItem.closest('.task-list');
     if (!validList) return;
 
-    // Get all sibling task-rows (excluding the dragged one).
-    const siblings = Array.from(validList.querySelectorAll(':scope > .task-item'))
-      .filter((item) => item.dataset.taskId !== dragState.taskId)
-      .map((item) => {
-        const row = item.querySelector('.task-row');
-        return row ? { item, row, rect: row.getBoundingClientRect() } : null;
+    // Get ALL rows currently in the DOM. This is much safer than `:scope >` which can fail
+    // if the DOM structure is slightly different than expected.
+    const allRows = Array.from(document.querySelectorAll('.task-row'));
+
+    // Filter down to only rows that are inside this specific `.task-list` (same section).
+    const siblings = allRows
+      .filter((row) => row.closest('.task-list') === validList)
+      .map((row) => {
+        const item = row.closest('.task-item');
+        // Exclude the dragged row from valid targets.
+        if (!item || item.dataset.taskId === dragState.taskId) return null;
+        return { item, row, rect: row.getBoundingClientRect() };
       })
       .filter(Boolean);
 
+    // If there are no other tasks in this list, clear any existing indicator.
     if (siblings.length === 0) {
       if (dragState.currentDrop) {
         dragState.currentDrop.item.dataset.dropState = '';
