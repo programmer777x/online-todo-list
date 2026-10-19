@@ -8,7 +8,7 @@
 //   - Loading from and saving to localStorage (with schema migration from v1 to v2).
 //   - Sanitizing incoming task data to ensure it matches the expected schema.
 //   - Creating, deleting, renaming, and switching between named lists.
-//   - Adding, removing, moving, and editing tasks and subtasks.
+//   - Adding, removing, moving, editing, and reordering tasks and subtasks.
 //   - Building the derived render tree (numbering is computed at render time, never stored).
 //
 // It assumes `config.js` has been loaded and its constants are available globally.
@@ -24,6 +24,9 @@
 // === ADDED ===
 //
 // - Initial creation. Extracted the state and data-layer logic from the original app.js.
+// - `reorderTask()` — data-layer half of drag-to-reorder. Reorders siblings within the same
+//   section and parent by reassigning `createdAt` timestamps, so the existing sort-by-`createdAt`
+//   render path needs no changes.
 //
 //
 //
@@ -328,4 +331,58 @@ function moveTask(id, section) {
   if (!task) return;
   task.section = section;
   saveState();
+}
+
+/**
+ * Reorder a task relative to a sibling in the same section and parent.
+ *
+ * `position` is 'before' or 'after'. Moving a task onto itself, or onto a task in a different
+ * section or with a different parent, is a no-op (that is `moveTask`'s job, not this function's).
+ *
+ * The reorder is implemented by rewriting the `createdAt` timestamps of the affected tasks so
+ * the existing sort-by-`createdAt` render path produces the desired order. The tasks' `id`s,
+ * text, done state, section, and parentId are untouched. No schema change.
+ *
+ * Returns true if any task was reordered, false otherwise. Does not render — the caller is
+ * responsible for calling render() after this returns true.
+ */
+function reorderTask(taskId, targetId, position) {
+  if (taskId === targetId) return false;
+  if (position !== 'before' && position !== 'after') return false;
+
+  const list = activeList();
+  const dragged = list.tasks.find((t) => t.id === taskId);
+  const target = list.tasks.find((t) => t.id === targetId);
+  if (!dragged || !target) return false;
+
+  // Only reorder within the same section and same parent. Cross-section is moveTask's job.
+  if (dragged.section !== target.section) return false;
+  if (dragged.parentId !== target.parentId) return false;
+
+  // Collect the siblings of this (section, parent) pair in their current render order.
+  const siblings = list.tasks
+    .filter((t) => t.section === dragged.section && t.parentId === dragged.parentId)
+    .sort((a, b) => a.createdAt - b.createdAt);
+
+  // Remove the dragged task from the sibling list, then re-insert at the target position.
+  const withoutDragged = siblings.filter((t) => t.id !== dragged.id);
+  const targetIndex = withoutDragged.findIndex((t) => t.id === target.id);
+  if (targetIndex === -1) return false;
+
+  const insertAt = position === 'before' ? targetIndex : targetIndex + 1;
+  withoutDragged.splice(insertAt, 0, dragged);
+
+  // No-op if the order is already identical.
+  const sameOrder = withoutDragged.every((t, i) => t.id === siblings[i].id);
+  if (sameOrder) return false;
+
+  // Reassign createdAt timestamps to match the new order. Use a base far enough in the past
+  // that it never collides with existing createdAt values (which come from Date.now()).
+  // We assign strictly increasing timestamps starting at 1 so the new order is unambiguous.
+  withoutDragged.forEach((t, i) => {
+    t.createdAt = i + 1;
+  });
+
+  saveState();
+  return true;
 }
