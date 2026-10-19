@@ -29,6 +29,16 @@
 //   as the draggable units, fixing the issue where items could not be dragged at all.
 // - Fixed SortableJS nested drag targeting using `:scope > .task-item` and `.task-item .task-item`
 //   filter. Prevents the parent list from hijacking the drag of a nested subtask.
+// - Reworked `initSortable()` again: `:scope` is not reliably supported by SortableJS and
+//   `filter: '.task-item .task-item'` is tested against the dragged item (so it never matched
+//   top-level tasks and only blocked subtasks after the outer list had already claimed the
+//   mousedown). Now uses `draggable: '> .task-item'` (SortableJS's supported direct-child
+//   syntax), removes `filter` entirely, and constrains each instance with
+//   `group: { pull: false, put: false }` so drags cannot transfer between lists. `onEnd` now
+//   delegates to `store.reorderTask(taskId, neighborId, 'before'|'after')` instead of
+//   hand-reassigning `createdAt` and mutating `section`/`parentId` — so a within-list drag is
+//   persisted correctly, and cross-section/cross-parent moves remain the job of the existing
+//   "Move to…" control.
 //
 // ================================================================================================
 
@@ -228,11 +238,37 @@ function handleListDelete() {
 
 /* ================================================================================================
    DRAG-TO-REORDER (SortableJS)
+   ------------------------------------------------------------------------------------------------
+   One Sortable instance per list container (each `.task-list` and each `.task-children`), so a
+   drag is always scoped to that container's own direct children. This is what makes parent
+   reorder and subtask reorder independent — they are separate Sortables on separate <ul>s, not
+   one Sortable trying to guess which descendant was grabbed.
+
+   Three rules that matter for the nested case:
+
+     1. `draggable: '> .task-item'` — the leading `>` is SortableJS's supported way to say
+        "direct children only." `:scope > .task-item` is NOT supported (SortableJS does not
+        implement `:scope` reliably) and was the cause of the subtask-does-not-drag symptom.
+
+     2. `group: { pull: false, put: false }` — drags cannot cross between lists. Cross-section
+        and cross-parent moves stay the job of the existing "Move to…" control. Sortable's job
+        here is reorder-within-list only.
+
+     3. `onEnd` calls the existing store.reorderTask(), which reorders by rewriting createdAt so
+        the sort-by-createdAt render path picks up the new order with no schema change. Do not
+        reassign createdAt here — reorderTask already does it correctly, and doing it twice
+        (once in onEnd, once in reorderTask) desynchronizes the sibling list.
    ================================================================================================ */
 
 /**
- * Initializes SortableJS on every task list container.
- * Called after render() so the DOM elements exist.
+ * Initializes a SortableJS instance on every task-list container in the current DOM.
+ *
+ * Called from render() after every render, so each container is torn down and re-created
+ * against the freshly built <li> nodes.
+ *
+ * The dragged item's new position is persisted by calling `reorderTask(taskId, neighborId,
+ * 'before' | 'after')` — see store.js. Only within-list reorder is performed here; cross-list
+ * moves are handled by the existing "Move to…" control.
  */
 function initSortable() {
   if (typeof Sortable === 'undefined') {
@@ -240,78 +276,86 @@ function initSortable() {
     return;
   }
 
-  // Apply to every `.task-list` AND `.task-children` <ul> in the DOM.
   document.querySelectorAll('.task-list, .task-children').forEach((listEl) => {
-    if (listEl.sortableInstance) {
-      listEl.sortableInstance.destroy();
+    // Destroy any instance left over from the previous render before re-binding.
+    if (listEl._sortableInstance) {
+      listEl._sortableInstance.destroy();
+      listEl._sortableInstance = null;
     }
 
-    listEl.sortableInstance = new Sortable(listEl, {
-      group: 'tasks',
-      
-      // THE FIX: Only allow direct children to be dragged by this specific list.
-      // This prevents the parent list from hijacking the drag of a nested subtask.
-      draggable: ':scope > .task-item',
-      
-      // Fallback: explicitly filter out items that belong to a nested list.
-      filter: '.task-item .task-item',
-      
+    listEl._sortableInstance = new Sortable(listEl, {
+      // Direct-child <li>s only. `>` is the supported way to scope this; `:scope` is not.
+      draggable: '> .task-item',
+
+      // Drags cannot transfer between lists. Reorder-within-list only.
+      group: { name: 'tasks', pull: false, put: false },
+
+      // Only the handle initiates a drag; the rest of the row keeps its click behavior.
       handle: '.task-drag-handle',
+
       animation: 150,
+
+      // Keep the dragged row visually attached to the cursor across list boundaries.
       fallbackOnBody: true,
       swapThreshold: 0.65,
+
       ghostClass: 'sortable-ghost',
       chosenClass: 'sortable-chosen',
-      forceFallback: true,
-      
-      onEnd: function (evt) {
-        const taskId = evt.item.dataset.taskId;
-        const task = activeList().tasks.find((t) => t.id === taskId);
-        if (!task) return;
+      dragClass: 'sortable-drag',
 
-        // Figure out where it was dropped.
-        const targetListEl = evt.to;
-        
-        // If it was dropped into a .task-children list, we need to find the parent task ID.
-        let newParentId = null;
-        if (targetListEl.classList.contains('task-children')) {
-          const parentItem = targetListEl.closest('.task-item');
-          if (parentItem) {
-            newParentId = parentItem.dataset.taskId;
-          }
+      // Move a task past the midpoint before reordering — avoids jitter on tall rows.
+      invertSwap: false,
+
+      onEnd(evt) {
+        // evt.oldIndex / evt.newIndex are the indices within evt.from / evt.to respectively.
+        // If they match, Sortable already reordered nothing; skip the store round-trip.
+        if (evt.oldIndex === evt.newIndex) return;
+
+        const draggedId = evt.item.dataset.taskId;
+        if (!draggedId) return;
+
+        // Find the sibling the dragged item should anchor to, using the post-drop DOM order
+        // in evt.to. Sortable has already moved the <li> in the DOM, so we read the neighbours
+        // from evt.to.children rather than trying to reconstruct indices ourselves.
+        const siblings = Array.from(evt.to.children).filter(
+          (el) => el.classList && el.classList.contains('task-item')
+        );
+
+        const droppedIndex = siblings.indexOf(evt.item);
+        if (droppedIndex === -1) return;
+
+        // Prefer "after" if there is a previous sibling; otherwise "before" the next one.
+        // Using "after the previous sibling" keeps the anchor stable when the list is
+        // reordered in a single direction, and avoids the edge case where the dragged item
+        // is the first child (no previous sibling).
+        const prevSibling = droppedIndex > 0 ? siblings[droppedIndex - 1] : null;
+        const nextSibling = droppedIndex < siblings.length - 1 ? siblings[droppedIndex + 1] : null;
+
+        let neighborId = null;
+        let position = null;
+
+        if (prevSibling) {
+          neighborId = prevSibling.dataset.taskId;
+          position = 'after';
+        } else if (nextSibling) {
+          neighborId = nextSibling.dataset.taskId;
+          position = 'before';
+        } else {
+          // Dropped into an empty list (or as the sole child) — nothing to anchor to.
+          // reorderTask cannot express "the only item in this list" and does not need to.
+          return;
         }
 
-        // If it was dropped into a top-level .task-list, find the section.
-        let newSection = task.section;
-        const sectionEl = targetListEl.closest('.task-section');
-        if (sectionEl) {
-          newSection = sectionEl.dataset.section;
-        } else if (targetListEl.dataset.listFor) {
-          newSection = targetListEl.dataset.listFor;
+        if (!neighborId) return;
+
+        // Persist the new order through the store. `reorderTask` is a no-op if the tasks are
+        // in different sections or different parents, which is exactly what we want here:
+        // a cross-list drag cannot happen (group pull/put are false), so a same-list drag is
+        // the only case that reaches this branch, and reorderTask will always succeed.
+        const changed = reorderTask(draggedId, neighborId, position);
+        if (changed) {
+          render();
         }
-
-        // Update the task's section and parentId
-        task.section = newSection;
-        task.parentId = newParentId;
-
-        // Determine the new index within the target list.
-        const items = Array.from(targetListEl.querySelectorAll(':scope > .task-item'));
-        const newIndex = items.indexOf(evt.item);
-
-        // Reassign createdAt timestamps to reflect the new order.
-        const siblings = activeList().tasks
-          .filter((t) => t.section === newSection && t.parentId === newParentId)
-          .sort((a, b) => a.createdAt - b.createdAt);
-
-        const withoutDragged = siblings.filter((t) => t.id !== taskId);
-        withoutDragged.splice(newIndex, 0, task);
-
-        withoutDragged.forEach((t, i) => {
-          t.createdAt = i + 1;
-        });
-
-        saveState();
-        render();
       },
     });
   });
