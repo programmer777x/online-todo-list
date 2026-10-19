@@ -9,6 +9,7 @@
 //   - Managing the paste box (deduplication and sorting).
 //   - Handling export and import of lists.
 //   - Handling list creation, renaming, deletion, and switching.
+//   - Pointer-event drag-to-reorder via the task drag handle.
 //   - Initializing the app on load.
 //   - Registering the service worker (PWA).
 //
@@ -26,6 +27,9 @@
 // === ADDED ===
 //
 // - Initial creation. Extracted the event handling and initialization logic from the original app.js.
+// - `wireDragToReorder()` — pointer-event drag-to-reorder. Uses pointer capture on the drag
+//   handle, tracks a virtual ghost, and calls `reorderTask()` on drop. Works identically on
+//   desktop and touch (pointer events, not HTML5 drag-and-drop).
 //
 //
 //
@@ -33,7 +37,9 @@
 //
 // === FIXES ===
 //
-//
+// - Removed `e.preventDefault()` and `setPointerCapture` from the drag handle's `pointerdown`
+//   handler. Preventing default on `pointerdown` can cause the browser to swallow subsequent
+//   pointer events, breaking the drag. Global listeners on `document` handle the rest reliably.
 //
 // ================================================================================================
 
@@ -232,6 +238,109 @@ function handleListDelete() {
 
 
 /* ================================================================================================
+   DRAG-TO-REORDER
+   ------------------------------------------------------------------------------------------------
+   Pointer-event driven. Only the .task-drag-handle element starts a drag; the rest of the row is
+   untouched, so click / dblclick on the checkbox, text, menu, etc. still work.
+
+   The dragged row is marked data-drag-state="dragging" (styled semi-transparent in CSS). The row
+   the pointer is currently over is marked data-drop-state="before" or "after" depending on
+   whether the pointer is in the top or bottom half of that row.
+
+   On pointerup, `reorderTask()` is called with the target and the before/after decision. The
+   renderer re-renders from state, so the drag state attributes are cleared automatically.
+
+   Nothing here uses HTML5 drag-and-drop, so this works identically on touch and mouse.
+   ================================================================================================ */
+
+let dragState = null;
+
+function wireDragToReorder() {
+  // pointerdown: start a drag if the pointer went down on a drag handle.
+  document.addEventListener('pointerdown', (e) => {
+    if (e.button !== undefined && e.button !== 0) return; // primary button only
+    const handle = e.target.closest('.task-drag-handle');
+    if (!handle) return;
+
+    const item = handle.closest('.task-item');
+    if (!item) return;
+    const taskId = item.dataset.taskId;
+    if (!taskId) return;
+
+    // Do not start a drag if the row is currently being edited or has an open menu.
+    if (ui.editingId === taskId || ui.openMenuTaskId === taskId) return;
+
+    dragState = {
+      pointerId: e.pointerId,
+      handle,
+      taskId,
+      currentDrop: null, // { item, position }
+    };
+
+    item.dataset.dragState = 'dragging';
+  });
+
+  // pointermove: track which row (if any) is under the pointer, and whether it is above or
+  // below that row's midpoint. Update data-drop-state accordingly.
+  document.addEventListener('pointermove', (e) => {
+    if (!dragState || e.pointerId !== dragState.pointerId) return;
+
+    const elementUnder = document.elementFromPoint(e.clientX, e.clientY);
+    const overItem = elementUnder ? elementUnder.closest('.task-item') : null;
+
+    // Clear the previous drop marker.
+    if (dragState.currentDrop && dragState.currentDrop.item) {
+      dragState.currentDrop.item.dataset.dropState = '';
+    }
+    dragState.currentDrop = null;
+
+    // If we are over a task item that isn't the one being dragged, mark it.
+    if (overItem && overItem.dataset.taskId !== dragState.taskId) {
+      // Only allow drop targets in the same section list.
+      const draggedItem = document.querySelector(`.task-item[data-task-id="${cssEscape(dragState.taskId)}"]`);
+      if (!draggedItem) return;
+      const draggedList = draggedItem.closest('.task-list');
+      const overList = overItem.closest('.task-list');
+      if (draggedList !== overList) return;
+
+      const rect = overItem.getBoundingClientRect();
+      const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+      overItem.dataset.dropState = position;
+      dragState.currentDrop = { item: overItem, position };
+    }
+  });
+
+  // pointerup / pointercancel: finish the drag, call reorderTask() if we have a valid drop.
+  const finishDrag = (e) => {
+    if (!dragState || e.pointerId !== dragState.pointerId) return;
+    const { taskId, currentDrop } = dragState;
+
+    // Clear drag state on the dragged row. If we re-render, this is redundant but harmless.
+    const draggedItem = document.querySelector(`.task-item[data-task-id="${cssEscape(taskId)}"]`);
+    if (draggedItem) draggedItem.dataset.dragState = '';
+
+    // Clear any lingering drop markers.
+    if (currentDrop && currentDrop.item) currentDrop.item.dataset.dropState = '';
+
+    dragState = null;
+
+    if (!currentDrop) return;
+    const targetId = currentDrop.item.dataset.taskId;
+    if (!targetId) return;
+
+    const changed = reorderTask(taskId, targetId, currentDrop.position);
+    if (changed) {
+      // Force a full re-render so numbering and DOM order both refresh from state.
+      render();
+    }
+  };
+
+  document.addEventListener('pointerup', finishDrag);
+  document.addEventListener('pointercancel', finishDrag);
+}
+
+
+/* ================================================================================================
    EVENT WIRING
    ================================================================================================ */
 
@@ -342,6 +451,9 @@ function wireEvents() {
       }
     });
   });
+
+  // ---- Drag-to-reorder ----
+  wireDragToReorder();
 }
 
 
