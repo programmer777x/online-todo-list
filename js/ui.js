@@ -44,6 +44,8 @@
 // - Fixed drag targeting for nested tasks. Uses `.task-row` dimensions instead of `.task-item`
 //   so parent tasks with children don't have artificially massive bounding boxes that swallow
 //   their own subtasks.
+// - Stored lastPointer position to recalculate on scroll. Made drop indicator targeting
+//   layout-agnostic to stop flickering.
 //
 // ================================================================================================
 
@@ -262,6 +264,99 @@ let dragState = null;
 const DRAG_SNAP_THRESHOLD = 4; // pixels around the midpoint to prevent flickering
 
 function wireDragToReorder() {
+  // Helper to calculate the drop target based on current dragState position
+  const updateDropTarget = () => {
+    if (!dragState) return;
+
+    const draggedItem = document.querySelector(`.task-item[data-task-id="${cssEscape(dragState.taskId)}"]`);
+    if (!draggedItem) return;
+
+    const validList = draggedItem.closest('.task-list');
+    if (!validList) return;
+
+    let overRow = null;
+
+    // If we have exact coordinates, try to find the element under the pointer first.
+    if (dragState.clientX !== undefined && dragState.clientY !== undefined) {
+      const elementUnder = document.elementFromPoint(dragState.clientX, dragState.clientY);
+      overRow = elementUnder ? elementUnder.closest('.task-row') : null;
+    }
+
+    let newDrop = null;
+
+    // If we didn't find a row directly, we might be over a gap, the list padding, or the container.
+    if (!overRow) {
+      // Find the nearest sibling row in the same list.
+      const siblings = validList.querySelectorAll(':scope > .task-item');
+      let bestMatch = null;
+      let bestDistance = Infinity;
+
+      for (const item of siblings) {
+        if (item.dataset.taskId === dragState.taskId) continue;
+        
+        // Only measure actual rendered rows inside the item, not the whole li
+        const row = item.querySelector('.task-row');
+        if (!row) continue;
+
+        const rect = row.getBoundingClientRect();
+        const distTop = Math.abs(dragState.clientY - rect.top);
+        const distBottom = Math.abs(dragState.clientY - rect.bottom);
+        const dist = Math.min(distTop, distBottom);
+
+        if (dist < bestDistance) {
+          bestDistance = dist;
+          bestMatch = item;
+        }
+      }
+      
+      if (bestMatch) {
+        overRow = bestMatch.querySelector('.task-row');
+      }
+    }
+
+    // Calculate before/after position based on row midpoint.
+    if (overRow) {
+      const overItem = overRow.closest('.task-item');
+      if (overItem && overItem.dataset.taskId !== dragState.taskId) {
+        const rect = overRow.getBoundingClientRect();
+        const midpoint = rect.top + rect.height / 2;
+
+        let position;
+        if (dragState.clientY < midpoint - DRAG_SNAP_THRESHOLD) {
+          position = 'before';
+        } else if (dragState.clientY > midpoint + DRAG_SNAP_THRESHOLD) {
+          position = 'after';
+        } else {
+          // Dead zone: keep the existing position if it's the same item.
+          if (dragState.currentDrop && dragState.currentDrop.item === overItem) {
+            position = dragState.currentDrop.position;
+          } else {
+            position = dragState.clientY < midpoint ? 'before' : 'after';
+          }
+        }
+
+        newDrop = { item: overItem, position };
+      }
+    }
+
+    // Only update DOM if target actually changed.
+    const current = dragState.currentDrop;
+    const changed = 
+      (!current && newDrop) ||
+      (current && !newDrop) ||
+      (current && newDrop && (current.item !== newDrop.item || current.position !== newDrop.position));
+
+    if (changed) {
+      if (current && current.item) {
+        current.item.dataset.dropState = '';
+      }
+      if (newDrop) {
+        newDrop.item.dataset.dropState = newDrop.position;
+      }
+      dragState.currentDrop = newDrop;
+    }
+  };
+
   // pointerdown: start a drag if the pointer went down on a drag handle.
   document.addEventListener('pointerdown', (e) => {
     if (e.button !== undefined && e.button !== 0) return; // primary button only
@@ -282,71 +377,27 @@ function wireDragToReorder() {
       pointerId: e.pointerId,
       handle,
       taskId,
-      currentDrop: null, // { item, position }
+      currentDrop: null,
+      clientX: e.clientX,
+      clientY: e.clientY,
     };
 
     item.dataset.dragState = 'dragging';
   });
 
-  // pointermove: track which row (if any) is under the pointer.
+  // pointermove: update coordinates and recalculate drop target.
   document.addEventListener('pointermove', (e) => {
     if (!dragState || e.pointerId !== dragState.pointerId) return;
-
-    // Find the `.task-row` element directly under the pointer.
-    const elementUnder = document.elementFromPoint(e.clientX, e.clientY);
-    let overRow = elementUnder ? elementUnder.closest('.task-row') : null;
-
-    const draggedItem = document.querySelector(`.task-item[data-task-id="${cssEscape(dragState.taskId)}"]`);
-    if (!draggedItem) return;
-
-    let newDrop = null;
-
-    if (overRow) {
-      const overItem = overRow.closest('.task-item');
-      if (overItem && overItem.dataset.taskId !== dragState.taskId) {
-        
-        // Measure the bounding box of the *visible row*, not the entire `<li>` (which
-        // includes nested subtasks and makes the midpoint wildly inaccurate).
-        const rect = overRow.getBoundingClientRect();
-        const midpoint = rect.top + rect.height / 2;
-
-        // Use a small threshold to prevent rapid flipping near the exact midpoint.
-        let position;
-        if (e.clientY < midpoint - DRAG_SNAP_THRESHOLD) {
-          position = 'before';
-        } else if (e.clientY > midpoint + DRAG_SNAP_THRESHOLD) {
-          position = 'after';
-        } else {
-          // Within the dead zone: keep the existing position if it's the same item, 
-          // otherwise default to the closest half.
-          if (dragState.currentDrop && dragState.currentDrop.item === overItem) {
-            position = dragState.currentDrop.position;
-          } else {
-            position = e.clientY < midpoint ? 'before' : 'after';
-          }
-        }
-
-        newDrop = { item: overItem, position };
-      }
-    }
-
-    // Update the DOM if the target or position actually changed.
-    const current = dragState.currentDrop;
-    const changed = 
-      (!current && newDrop) ||
-      (current && !newDrop) ||
-      (current && newDrop && (current.item !== newDrop.item || current.position !== newDrop.position));
-
-    if (changed) {
-      if (current && current.item) {
-        current.item.dataset.dropState = '';
-      }
-      if (newDrop) {
-        newDrop.item.dataset.dropState = newDrop.position;
-      }
-      dragState.currentDrop = newDrop;
-    }
+    
+    dragState.clientX = e.clientX;
+    dragState.clientY = e.clientY;
+    updateDropTarget();
   });
+
+  // scroll: if the page scrolls while dragging (e.g. mobile auto-scroll), recalculate.
+  window.addEventListener('scroll', () => {
+    if (dragState) updateDropTarget();
+  }, { passive: true });
 
   // pointerup / pointercancel: finish the drag, call reorderTask() if we have a valid drop.
   const finishDrag = (e) => {
