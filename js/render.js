@@ -42,7 +42,8 @@
 //
 // === FIXES ===
 //
-//
+// - Added a call to `initSortable()` at the end of `render()` so SortableJS is re-bound to the
+//   freshly rendered DOM elements after every state change or re-render.
 //
 // ================================================================================================
 
@@ -202,6 +203,11 @@ function render() {
     for (const node of tree) {
       listEl.appendChild(renderNode(node, visibleIds));
     }
+  }
+
+  // Re-initialize SortableJS on the freshly rendered lists.
+  if (typeof initSortable === 'function') {
+    initSortable();
   }
 }
 
