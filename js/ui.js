@@ -41,6 +41,9 @@
 //   `setPointerCapture`. Preventing default on `pointerdown` is necessary to stop the browser
 //   from hijacking the gesture for text selection or page scrolling. Relies on global `document`
 //   listeners for tracking.
+// - Replaced `elementFromPoint` with a geometric bounding-box iteration to find the drop target.
+//   This fixes a bug where dragging over a gap would drop the task at the bottom of the list,
+//   and prevents flickering when hovering near the exact midpoint of a row.
 //
 // ================================================================================================
 
@@ -256,6 +259,8 @@ function handleListDelete() {
 
 let dragState = null;
 
+const DRAG_SNAP_THRESHOLD = 4; // pixels around the midpoint to prevent flickering
+
 function wireDragToReorder() {
   // pointerdown: start a drag if the pointer went down on a drag handle.
   document.addEventListener('pointerdown', (e) => {
@@ -283,33 +288,84 @@ function wireDragToReorder() {
     item.dataset.dragState = 'dragging';
   });
 
-  // pointermove: track which row (if any) is under the pointer, and whether it is above or
-  // below that row's midpoint. Update data-drop-state accordingly.
+  // pointermove: find the nearest valid sibling row and determine if the pointer is in its
+  // top half (before) or bottom half (after).
   document.addEventListener('pointermove', (e) => {
     if (!dragState || e.pointerId !== dragState.pointerId) return;
 
-    const elementUnder = document.elementFromPoint(e.clientX, e.clientY);
-    const overItem = elementUnder ? elementUnder.closest('.task-item') : null;
+    const draggedItem = document.querySelector(`.task-item[data-task-id="${cssEscape(dragState.taskId)}"]`);
+    if (!draggedItem) return;
+    
+    const listEl = draggedItem.closest('.task-list');
+    if (!listEl) return;
 
-    // Clear the previous drop marker.
-    if (dragState.currentDrop && dragState.currentDrop.item) {
-      dragState.currentDrop.item.dataset.dropState = '';
+    // Get all sibling items in this list, ignoring the one being dragged.
+    const items = Array.from(listEl.querySelectorAll('.task-item')).filter(
+      (el) => el.dataset.taskId !== dragState.taskId
+    );
+
+    let bestMatch = null;
+    let bestDistance = Infinity;
+
+    // Find the row we are closest to (vertically).
+    for (const item of items) {
+      const rect = item.getBoundingClientRect();
+      // If the pointer is directly above or below this item's horizontal span...
+      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        bestMatch = item;
+        bestDistance = 0;
+        break; // perfect match, stop looking
+      }
+      // Otherwise measure distance to the nearest edge.
+      const distTop = Math.abs(e.clientY - rect.top);
+      const distBottom = Math.abs(e.clientY - rect.bottom);
+      const dist = Math.min(distTop, distBottom);
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        bestMatch = item;
+      }
     }
-    dragState.currentDrop = null;
 
-    // If we are over a task item that isn't the one being dragged, mark it.
-    if (overItem && overItem.dataset.taskId !== dragState.taskId) {
-      // Only allow drop targets in the same section list.
-      const draggedItem = document.querySelector(`.task-item[data-task-id="${cssEscape(dragState.taskId)}"]`);
-      if (!draggedItem) return;
-      const draggedList = draggedItem.closest('.task-list');
-      const overList = overItem.closest('.task-list');
-      if (draggedList !== overList) return;
+    let newDrop = null;
 
-      const rect = overItem.getBoundingClientRect();
-      const position = e.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
-      overItem.dataset.dropState = position;
-      dragState.currentDrop = { item: overItem, position };
+    if (bestMatch) {
+      const rect = bestMatch.getBoundingClientRect();
+      const midpoint = rect.top + rect.height / 2;
+      
+      // Use a small threshold to prevent rapid flipping near the exact midpoint.
+      let position;
+      if (e.clientY < midpoint - DRAG_SNAP_THRESHOLD) {
+        position = 'before';
+      } else if (e.clientY > midpoint + DRAG_SNAP_THRESHOLD) {
+        position = 'after';
+      } else {
+        // Within the dead zone: keep the existing position if it's the same item, 
+        // otherwise default to the closest half.
+        if (dragState.currentDrop && dragState.currentDrop.item === bestMatch) {
+          position = dragState.currentDrop.position;
+        } else {
+          position = e.clientY < midpoint ? 'before' : 'after';
+        }
+      }
+
+      newDrop = { item: bestMatch, position };
+    }
+
+    // Only update the DOM if the target or position actually changed.
+    const current = dragState.currentDrop;
+    const changed = 
+      (!current && newDrop) ||
+      (current && !newDrop) ||
+      (current && newDrop && (current.item !== newDrop.item || current.position !== newDrop.position));
+
+    if (changed) {
+      if (current && current.item) {
+        current.item.dataset.dropState = '';
+      }
+      if (newDrop) {
+        newDrop.item.dataset.dropState = newDrop.position;
+      }
+      dragState.currentDrop = newDrop;
     }
   });
 
