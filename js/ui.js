@@ -4,18 +4,6 @@
 //
 // Event wiring, user interactions, and app initialization for the Online To Do List.
 //
-// This file connects the DOM to the logic layer (store.js) and view layer (render.js). It handles:
-//   - Wiring all user events (clicks, inputs, keyboard shortcuts).
-//   - Managing the paste box (deduplication and sorting).
-//   - Handling export and import of lists.
-//   - Handling list creation, renaming, deletion, and switching.
-//   - Pointer-event drag-to-reorder via the task drag handle.
-//   - Initializing the app on load.
-//   - Registering the service worker (PWA).
-//
-// It relies on the `state` and `ui` objects and helper functions from store.js, the rendering
-// functions from render.js, and the constants from config.js.
-//
 // ================================================================================================
 //
 // === REVISIONS ===
@@ -27,9 +15,6 @@
 // === ADDED ===
 //
 // - Initial creation. Extracted the event handling and initialization logic from the original app.js.
-// - `wireDragToReorder()` — pointer-event drag-to-reorder. Uses pointer capture on the drag
-//   handle, tracks a virtual ghost, and calls `reorderTask()` on drop. Works identically on
-//   desktop and touch (pointer events, not HTML5 drag-and-drop).
 //
 //
 //
@@ -37,13 +22,9 @@
 //
 // === FIXES ===
 //
-// - Restored `e.preventDefault()` in the drag handle's `pointerdown` handler, and removed
-//   `setPointerCapture`. Preventing default on `pointerdown` is necessary to stop the browser
-//   from hijacking the gesture for text selection or page scrolling. Relies on global `document`
-//   listeners for tracking.
-// - Overhauled drag targeting. Now caches row rects on drag start and uses an anchor offset so
-//   the indicator moves based on the row's position, not the mouse pointer. Eliminates jumping
-//   and fixes missing indicators for subtasks.
+// - Replaced the custom pointer-event drag-to-reorder implementation with SortableJS.
+//   SortableJS handles nested lists, touch devices, and smooth animations natively, eliminating
+//   the layout-thrashing and jumpy behavior of the custom solution.
 //
 // ================================================================================================
 
@@ -242,141 +223,73 @@ function handleListDelete() {
 
 
 /* ================================================================================================
-   DRAG-TO-REORDER
+   DRAG-TO-REORDER (SortableJS)
    ================================================================================================ */
 
-let dragState = null;
-const DRAG_SNAP_THRESHOLD = 15; // Larger dead zone for deliberate movement
+/**
+ * Initializes SortableJS on every task list container.
+ * Called after render() so the DOM elements exist.
+ */
+function initSortable() {
+  // SortableJS provides a global `Sortable` object when loaded via <script>.
+  if (typeof Sortable === 'undefined') {
+    console.warn('SortableJS not loaded.');
+    return;
+  }
 
-function wireDragToReorder() {
-  document.addEventListener('pointerdown', (e) => {
-    if (e.button !== undefined && e.button !== 0) return;
-    const handle = e.target.closest('.task-drag-handle');
-    if (!handle) return;
+  // Apply to every `.task-list` <ul> in the DOM.
+  document.querySelectorAll('.task-list').forEach((listEl) => {
+    // Avoid double-initializing if render() is called multiple times.
+    if (listEl.sortableInstance) {
+      listEl.sortableInstance.destroy();
+    }
 
-    const item = handle.closest('.task-item');
-    if (!item) return;
-    const taskId = item.dataset.taskId;
-    if (!taskId) return;
+    listEl.sortableInstance = new Sortable(listEl, {
+      group: 'tasks',              // Allow dragging between lists in the same group
+      handle: '.task-drag-handle', // Only the handle initiates the drag
+      animation: 150,
+      fallbackOnBody: true,        // Required for nested lists to drag reliably
+      swapThreshold: 0.65,         // Prevents jitter when near the midpoint
+      ghostClass: 'sortable-ghost',
+      chosenClass: 'sortable-chosen',
+      onEnd: function (evt) {
+        // Read the new order from the DOM and update the store.
+        const taskId = evt.item.dataset.taskId;
+        const targetListEl = evt.to;
+        const targetSection = targetListEl.dataset.listFor;
 
-    if (ui.editingId === taskId || ui.openMenuTaskId === taskId) return;
+        // Determine the new index within the target list.
+        const items = Array.from(targetListEl.querySelectorAll('.task-item'));
+        const newIndex = items.indexOf(evt.item);
 
-    e.preventDefault();
+        // Update the task's section if it moved between lists.
+        const task = activeList().tasks.find((t) => t.id === taskId);
+        if (!task) return;
 
-    const dragTask = activeList().tasks.find(t => t.id === taskId);
-    if (!dragTask) return;
+        task.section = targetSection;
 
-    // 1. Cache the exact geometry of all valid siblings right now.
-    const siblingElements = Array.from(document.querySelectorAll('.task-item')).filter((el) => {
-      const t = activeList().tasks.find(task => task.id === el.dataset.taskId);
-      if (!t || t.id === taskId) return false;
-      return t.section === dragTask.section && t.parentId === dragTask.parentId;
+        // Reassign createdAt timestamps to reflect the new order.
+        // We only re-sequence the siblings in the target list.
+        const siblings = activeList().tasks
+          .filter((t) => t.section === targetSection && t.parentId === task.parentId)
+          .sort((a, b) => a.createdAt - b.createdAt);
+
+        // Remove the dragged task from the sorted array.
+        const withoutDragged = siblings.filter((t) => t.id !== taskId);
+
+        // Insert it at the new index.
+        withoutDragged.splice(newIndex, 0, task);
+
+        // Reassign timestamps to match the new DOM order.
+        withoutDragged.forEach((t, i) => {
+          t.createdAt = i + 1;
+        });
+
+        saveState();
+        render();
+      },
     });
-
-    const siblings = siblingElements.map((el) => {
-      const row = el.querySelector('.task-row');
-      const rect = row.getBoundingClientRect();
-      return {
-        item: el,
-        rect,
-        midpoint: rect.top + rect.height / 2
-      };
-    });
-
-    // 2. Record where on the row the user grabbed the handle.
-    const rowRect = item.querySelector('.task-row').getBoundingClientRect();
-    const grabOffsetY = e.clientY - rowRect.top;
-
-    dragState = {
-      pointerId: e.pointerId,
-      handle,
-      taskId,
-      currentDrop: null,
-      grabOffsetY,
-      siblings,
-    };
-
-    item.dataset.dragState = 'dragging';
   });
-
-  document.addEventListener('pointermove', (e) => {
-    if (!dragState || e.pointerId !== dragState.pointerId) return;
-
-    // Calculate where the *top* of the dragged row currently is.
-    const virtualTop = e.clientY - dragState.grabOffsetY;
-
-    let bestMatch = null;
-    let bestDistance = Infinity;
-
-    // Find the row whose midpoint is closest to the dragged row's top edge.
-    for (const sib of dragState.siblings) {
-      const dist = Math.abs(virtualTop - sib.midpoint);
-      if (dist < bestDistance) {
-        bestDistance = dist;
-        bestMatch = sib;
-      }
-    }
-
-    let newDrop = null;
-
-    if (bestMatch) {
-      let position;
-      
-      // If the virtual top of the dragged row is above the midpoint minus threshold -> 'before'
-      // If below the midpoint plus threshold -> 'after'
-      // Otherwise -> dead zone, keep existing position.
-      if (virtualTop < bestMatch.midpoint - DRAG_SNAP_THRESHOLD) {
-        position = 'before';
-      } else if (virtualTop > bestMatch.midpoint + DRAG_SNAP_THRESHOLD) {
-        position = 'after';
-      } else {
-        if (dragState.currentDrop && dragState.currentDrop.item === bestMatch.item) {
-          position = dragState.currentDrop.position;
-        } else {
-          position = virtualTop < bestMatch.midpoint ? 'before' : 'after';
-        }
-      }
-      
-      newDrop = { item: bestMatch.item, position };
-    }
-
-    // Update DOM if changed.
-    const current = dragState.currentDrop;
-    const changed = 
-      (!current && newDrop) ||
-      (current && !newDrop) ||
-      (current && newDrop && (current.item !== newDrop.item || current.position !== newDrop.position));
-
-    if (changed) {
-      if (current && current.item) current.item.dataset.dropState = '';
-      if (newDrop) newDrop.item.dataset.dropState = newDrop.position;
-      dragState.currentDrop = newDrop;
-    }
-  });
-
-  const finishDrag = (e) => {
-    if (!dragState || e.pointerId !== dragState.pointerId) return;
-    const { taskId, currentDrop } = dragState;
-
-    const draggedItem = document.querySelector(`.task-item[data-task-id="${cssEscape(taskId)}"]`);
-    if (draggedItem) draggedItem.dataset.dragState = '';
-
-    if (currentDrop && currentDrop.item) currentDrop.item.dataset.dropState = '';
-
-    dragState = null;
-
-    if (!currentDrop) return;
-    const targetId = currentDrop.item.dataset.taskId;
-    if (!targetId) return;
-
-    const changed = reorderTask(taskId, targetId, currentDrop.position);
-    if (changed) {
-      render();
-    }
-  };
-
-  document.addEventListener('pointerup', finishDrag);
-  document.addEventListener('pointercancel', finishDrag);
 }
 
 
@@ -485,9 +398,6 @@ function wireEvents() {
       }
     });
   });
-
-  // ---- Drag-to-reorder ----
-  wireDragToReorder();
 }
 
 
@@ -503,6 +413,10 @@ function init() {
   wireEvents();
   render();
 
+  // Initialize SortableJS after the first render.
+  initSortable();
+
+  // Register the service worker for PWA offline support.
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').catch((err) => {
