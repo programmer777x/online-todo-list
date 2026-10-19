@@ -25,6 +25,8 @@
 // - Replaced the custom pointer-event drag-to-reorder implementation with SortableJS.
 //   SortableJS handles nested lists, touch devices, and smooth animations natively, eliminating
 //   the layout-thrashing and jumpy behavior of the custom solution.
+// - Added `draggable: '.task-item'` to SortableJS so it correctly identifies the `<li>` elements
+//   as the draggable units, fixing the issue where items could not be dragged at all.
 //
 // ================================================================================================
 
@@ -246,6 +248,7 @@ function initSortable() {
 
     listEl.sortableInstance = new Sortable(listEl, {
       group: 'tasks',              // Allow dragging between lists in the same group
+      draggable: '.task-item',     // Explicitly define the draggable elements
       handle: '.task-drag-handle', // Only the handle initiates the drag
       animation: 150,
       fallbackOnBody: true,        // Required for nested lists to drag reliably
@@ -259,7 +262,7 @@ function initSortable() {
         const targetSection = targetListEl.dataset.listFor;
 
         // Determine the new index within the target list.
-        const items = Array.from(targetListEl.querySelectorAll('.task-item'));
+        const items = Array.from(targetListEl.querySelectorAll(':scope > .task-item'));
         const newIndex = items.indexOf(evt.item);
 
         // Update the task's section if it moved between lists.
