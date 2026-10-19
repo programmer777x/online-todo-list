@@ -39,6 +39,19 @@
 //   hand-reassigning `createdAt` and mutating `section`/`parentId` — so a within-list drag is
 //   persisted correctly, and cross-section/cross-parent moves remain the job of the existing
 //   "Move to…" control.
+// - Enabled cross-parent drag via SortableJS `group: { pull: true, put: true }`. `onEnd` now
+//   detects when a task is dropped into a different `<ul>` (either a different parent's
+//   `.task-children` or a different section's `.task-list`), resolves the new parent and section
+//   from the DOM, and calls the new `store.reparentTask()` to persist the parent/section change
+//   before calling `store.reorderTask()` to place the task at the exact dropped index. This
+//   replaces the previous "Move to…" control for subtask reparenting. Cycle prevention
+//   (a task cannot become its own descendant) is enforced by Sortable's DOM mechanics — a
+//   dragged task is physically removed from the DOM during drag, so it never appears inside
+//   its own subtree — plus a single-level `taskId === newParentId` guard in `reparentTask`.
+// - Added YouTube-style auto-scroll for touch drags: `scroll: true`, `scrollSensitivity: 100`,
+//   `scrollSpeed: 15`, `bubbleScroll: true`. Dragging near the top or bottom of the viewport
+//   now scrolls the page, so a task can be dropped into a list that was off-screen when the
+//   drag started.
 //
 // ================================================================================================
 
@@ -244,20 +257,29 @@ function handleListDelete() {
    reorder and subtask reorder independent — they are separate Sortables on separate <ul>s, not
    one Sortable trying to guess which descendant was grabbed.
 
-   Three rules that matter for the nested case:
+   Cross-parent drag is now enabled (`group: { pull: true, put: true }`). When a task is dropped
+   into a different container, `onEnd` reads the destination DOM to resolve the new parent task
+   and section, then calls `store.reparentTask()` to persist that change, then
+   `store.reorderTask()` to place the task at the exact dropped index. Cycles are physically
+   impossible because the dragged task is removed from the DOM during drag — it never appears
+   in its own subtree as a drop target.
+
+   `scroll`, `scrollSensitivity`, `scrollSpeed`, and `bubbleScroll` add YouTube-style auto-scroll
+   during drag. Dragging near the top or bottom edge of the viewport now scrolls the page, so a
+   task can be dropped into a container that was off-screen when the drag started.
+
+   Rules that still matter:
 
      1. `draggable: '> .task-item'` — the leading `>` is SortableJS's supported way to say
         "direct children only." `:scope > .task-item` is NOT supported (SortableJS does not
         implement `:scope` reliably) and was the cause of the subtask-does-not-drag symptom.
 
-     2. `group: { pull: false, put: false }` — drags cannot cross between lists. Cross-section
-        and cross-parent moves stay the job of the existing "Move to…" control. Sortable's job
-        here is reorder-within-list only.
+     2. `handle: '.task-drag-handle'` — only the handle initiates a drag; the rest of the row
+        keeps its click behavior intact.
 
-     3. `onEnd` calls the existing store.reorderTask(), which reorders by rewriting createdAt so
-        the sort-by-createdAt render path picks up the new order with no schema change. Do not
-        reassign createdAt here — reorderTask already does it correctly, and doing it twice
-        (once in onEnd, once in reorderTask) desynchronizes the sibling list.
+     3. `onEnd` calls the store functions and lets them handle persistence. Do not reassign
+        `createdAt` or mutate `section`/`parentId` here — `reparentTask` and `reorderTask`
+        already do it correctly, and duplicating the mutation desynchronizes the data.
    ================================================================================================ */
 
 /**
@@ -266,9 +288,11 @@ function handleListDelete() {
  * Called from render() after every render, so each container is torn down and re-created
  * against the freshly built <li> nodes.
  *
- * The dragged item's new position is persisted by calling `reorderTask(taskId, neighborId,
- * 'before' | 'after')` — see store.js. Only within-list reorder is performed here; cross-list
- * moves are handled by the existing "Move to…" control.
+ * The dragged item's new position is persisted through two store calls:
+ *   - If dropped in a different container, `reparentTask(taskId, newParentId, newSection)` first,
+ *     to update the task's parent and section.
+ *   - Then `reorderTask(taskId, neighborId, 'before' | 'after')`, to place the task at the exact
+ *     dropped index within its new siblings.
  */
 function initSortable() {
   if (typeof Sortable === 'undefined') {
@@ -287,8 +311,8 @@ function initSortable() {
       // Direct-child <li>s only. `>` is the supported way to scope this; `:scope` is not.
       draggable: '> .task-item',
 
-      // Drags cannot transfer between lists. Reorder-within-list only.
-      group: { name: 'tasks', pull: false, put: false },
+      // Allow drags to move between lists (e.g., subtask to another parent).
+      group: { name: 'tasks', pull: true, put: true },
 
       // Only the handle initiates a drag; the rest of the row keeps its click behavior.
       handle: '.task-drag-handle',
@@ -306,17 +330,46 @@ function initSortable() {
       // Move a task past the midpoint before reordering — avoids jitter on tall rows.
       invertSwap: false,
 
+      // --- Auto-scroll (YouTube-style) ---
+      scroll: true,
+      scrollSensitivity: 100, // Fires scroll when within 100px of the viewport edge
+      scrollSpeed: 15,        // Scrolls faster than default
+      bubbleScroll: true,     // Allows the window to scroll if the list itself doesn't overflow
+
       onEnd(evt) {
-        // evt.oldIndex / evt.newIndex are the indices within evt.from / evt.to respectively.
-        // If they match, Sortable already reordered nothing; skip the store round-trip.
-        if (evt.oldIndex === evt.newIndex) return;
+        // If dropped in the same position, nothing changed.
+        if (evt.oldIndex === evt.newIndex && evt.from === evt.to) return;
 
         const draggedId = evt.item.dataset.taskId;
         if (!draggedId) return;
 
-        // Find the sibling the dragged item should anchor to, using the post-drop DOM order
-        // in evt.to. Sortable has already moved the <li> in the DOM, so we read the neighbours
-        // from evt.to.children rather than trying to reconstruct indices ourselves.
+        // Determine if the task changed lists.
+        const changedList = evt.from !== evt.to;
+
+        if (changedList) {
+          // Figure out the new parent and section from the target <ul>.
+          let newParentId = null;
+          if (evt.to.classList.contains('task-children')) {
+            const parentItem = evt.to.closest('.task-item');
+            if (parentItem) {
+              newParentId = parentItem.dataset.taskId;
+            }
+          }
+
+          // Determine the new section.
+          let newSection = 'sort';
+          const sectionEl = evt.to.closest('.task-section');
+          if (sectionEl) {
+            newSection = sectionEl.dataset.section;
+          } else if (evt.to.dataset.listFor) {
+            newSection = evt.to.dataset.listFor;
+          }
+
+          // Update the task's parent and section in the store.
+          reparentTask(draggedId, newParentId, newSection);
+        }
+
+        // Now that the parent/section is updated, find the sibling to anchor to.
         const siblings = Array.from(evt.to.children).filter(
           (el) => el.classList && el.classList.contains('task-item')
         );
@@ -324,10 +377,6 @@ function initSortable() {
         const droppedIndex = siblings.indexOf(evt.item);
         if (droppedIndex === -1) return;
 
-        // Prefer "after" if there is a previous sibling; otherwise "before" the next one.
-        // Using "after the previous sibling" keeps the anchor stable when the list is
-        // reordered in a single direction, and avoids the edge case where the dragged item
-        // is the first child (no previous sibling).
         const prevSibling = droppedIndex > 0 ? siblings[droppedIndex - 1] : null;
         const nextSibling = droppedIndex < siblings.length - 1 ? siblings[droppedIndex + 1] : null;
 
@@ -342,18 +391,16 @@ function initSortable() {
           position = 'before';
         } else {
           // Dropped into an empty list (or as the sole child) — nothing to anchor to.
-          // reorderTask cannot express "the only item in this list" and does not need to.
+          // The reparentTask above already saved the new location, so we just render.
+          render();
           return;
         }
 
         if (!neighborId) return;
 
-        // Persist the new order through the store. `reorderTask` is a no-op if the tasks are
-        // in different sections or different parents, which is exactly what we want here:
-        // a cross-list drag cannot happen (group pull/put are false), so a same-list drag is
-        // the only case that reaches this branch, and reorderTask will always succeed.
-        const changed = reorderTask(draggedId, neighborId, position);
-        if (changed) {
+        // Persist the new order.
+        const changedOrder = reorderTask(draggedId, neighborId, position);
+        if (changedOrder || changedList) {
           render();
         }
       },
