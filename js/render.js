@@ -44,6 +44,15 @@
 //
 // - Added a call to `initSortable()` at the end of `render()` so SortableJS is re-bound to the
 //   freshly rendered DOM elements after every state change or re-render.
+// - Action menu now renders into `document.body` instead of into the task row. The parent
+//   `.task-section` has `backdrop-filter: blur()`, which creates a new CSS stacking context;
+//   any `z-index` applied inside that section is therefore trapped and cannot render above
+//   subsequent sections. Rendering the menu into `<body>` escapes that stacking context
+//   entirely. `positionMenu()` now computes fixed viewport coordinates from the ⋯ button's
+//   `getBoundingClientRect()` and applies `top`/`left` inline. The `is-flipped` class still
+//   toggles the up-vs-down animation, but the geometric flip is calculated in JS. `render()`
+//   now sweeps any stale `.task-action-menu` elements out of `<body>` at the top of the
+//   rebuild, since clearing `listEl.innerHTML` no longer removes the menu.
 //
 // ================================================================================================
 
@@ -175,6 +184,11 @@ function visibleIdsForSearch(tasks, query) {
 function render() {
   const list = activeList();
   const tasks = list.tasks;
+
+  // Menu is body-attached (see renderNode) and is no longer cleared by listEl.innerHTML reset.
+  // Sweep any stale instance before the rebuild, so at most one menu exists and the fresh one
+  // is the only candidate for `document.querySelector('.task-action-menu')` in positionMenu().
+  document.querySelectorAll('.task-action-menu').forEach((m) => m.remove());
 
   const visibleIds = visibleIdsForSearch(tasks, ui.search);
   const counter = { value: 1 };
@@ -308,9 +322,12 @@ function renderNode(node, visibleIds) {
 
   // --- Mobile ⋯ button and its menu ---
   row.appendChild(renderMenuButton(task));
+
+  // Append the menu directly to the body to escape the stacking context created by
+  // the section's `backdrop-filter: blur()`. This allows it to float above other sections.
   const menu = renderActionMenu(task);
   if (menu) {
-    row.appendChild(menu);
+    document.body.appendChild(menu);
   }
 
   item.appendChild(row);
@@ -441,6 +458,9 @@ function renderMenuButton(task) {
 /**
  * The mobile action menu. Rendered only when this task's menu is the open one — so at most one
  * exists in the DOM at a time, and no cleanup is needed when the open task changes.
+ *
+ * The menu is appended to `document.body` by `renderNode`, not returned into the row. That
+ * placement is what escapes the `.task-section` `backdrop-filter` stacking context.
  */
 function renderActionMenu(task) {
   if (ui.openMenuTaskId !== task.id) return null;
@@ -479,8 +499,8 @@ function renderActionMenu(task) {
   removeItem.classList.add('task-menu-item-danger');
   menu.appendChild(removeItem);
 
-  // Flip upward if there is not enough room below. Done after the menu is in the DOM (in
-  // positionMenu), not here — we need to measure its rendered height.
+  // Positioning (below / flip up, edge-clamp) happens in positionMenu, after the menu is in
+  // the DOM and measurable.
   return menu;
 }
 
@@ -515,7 +535,7 @@ function menuItem(icon, labelText, onClick) {
 
 /**
  * Toggle the ⋯ menu for a task. Opening one closes any other (only one open at a time).
- * After opening, positionMenu() runs on the next frame to measure and flip if needed.
+ * After opening, positionMenu() runs on the next frame to measure and place it.
  */
 function toggleMenu(taskId) {
   if (ui.openMenuTaskId === taskId) {
@@ -546,29 +566,48 @@ function closeMenu({ returnFocus = false } = {}) {
 }
 
 /**
- * Flip the open menu upward if it would overflow the viewport bottom.
- * Called once after the menu is rendered.
+ * Position the open menu using fixed coordinates relative to the viewport, based on the
+ * position of the ⋯ button that opened it.
  */
 function positionMenu(taskId) {
   const menu = document.querySelector('.task-action-menu');
-  if (!menu) return;
+  const btn = document.querySelector(`[data-menu-button-for="${cssEscape(taskId)}"]`);
+  if (!menu || !btn) return;
 
-  // Reset any prior flip so we measure the natural (downward) position.
+  // Reset any prior positioning so we measure the natural size.
+  menu.style.top = 'auto';
+  menu.style.bottom = 'auto';
+  menu.style.left = 'auto';
+  menu.style.right = 'auto';
   menu.classList.remove('is-flipped');
 
-  const rect = menu.getBoundingClientRect();
-  const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+  const btnRect = btn.getBoundingClientRect();
+  const menuRect = menu.getBoundingClientRect();
+  const vw = window.innerWidth || document.documentElement.clientWidth;
+  const vh = window.innerHeight || document.documentElement.clientHeight;
 
-  // If the menu's bottom edge is below the viewport, flip up.
-  if (rect.bottom > viewportHeight - 8) {
+  // Default: align menu's right edge with the button's right edge, and place below button.
+  let top = btnRect.bottom + 6;
+  let left = btnRect.right - menuRect.width;
+
+  // Flip up if it would overflow the bottom of the viewport.
+  if (top + menuRect.height > vh - 8) {
+    top = btnRect.top - menuRect.height - 6;
     menu.classList.add('is-flipped');
   }
 
-  // Horizontal overflow guard: if the menu's right edge is off-screen, pull it back in.
-  const vw = window.innerWidth || document.documentElement.clientWidth;
-  if (rect.right > vw - 8) {
-    menu.style.right = '0';
+  // Pull left if it would overflow the right edge.
+  if (left + menuRect.width > vw - 8) {
+    left = vw - menuRect.width - 8;
   }
+
+  // Pull right if it would overflow the left edge.
+  if (left < 8) {
+    left = 8;
+  }
+
+  menu.style.top = `${top}px`;
+  menu.style.left = `${left}px`;
 }
 
 /**
