@@ -840,6 +840,13 @@ body {
   border-color: var(--accent-hover);
 }
 
+/* Force readable colors for native <select> dropdown options across all themes.
+   Browsers ignore most styling on <option>, but background-color and color are supported. */
+select option {
+  background-color: #1a1a24; /* Dark background matching the app shell */
+  color: #ffffff;            /* White text */
+}
+
 /* ================================================================================================
    12. TASK ACTION MENU
    ------------------------------------------------------------------------------------------------
