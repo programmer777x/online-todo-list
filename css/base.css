@@ -840,11 +840,10 @@ body {
   border-color: var(--accent-hover);
 }
 
-/* Force readable colors for native <select> dropdown options across all themes.
-   Browsers ignore most styling on <option>, but background-color and color are supported. */
+/* Make the native <option> dropdown inherit the active theme's colors */
 select option {
-  background-color: #1a1a24; /* Dark background matching the app shell */
-  color: #ffffff;            /* White text */
+  background-color: var(--panel-bg);
+  color: var(--text-primary);
 }
 
 /* ================================================================================================
