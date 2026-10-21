@@ -840,17 +840,11 @@ body {
   border-color: var(--accent-hover);
 }
 
-/* Make native dropdowns match the floating menu background tone, forcing it solid
-   because native <option> elements do not support rgba transparency. */
+/* Force solid backgrounds matching the theme, avoiding alpha-channel rendering bugs */
 select option {
-  background-color: color-mix(in srgb, var(--menu-bg) 100%, black);
-  color: var(--text-primary);
-}
-
-/* Force the dropdown select itself to match the theme, and apply a teal tint to the highlight */
-select:focus-visible {
-  outline: none;
-  box-shadow: var(--accent-glow);
+  background-color: var(--bg-solid);
+  color: var(--accent);
+  font-weight: 600;
 }
 
 /* ================================================================================================
