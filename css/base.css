@@ -840,9 +840,9 @@ body {
   border-color: var(--accent-hover);
 }
 
-/* Make the native <option> dropdown inherit the active theme's colors */
+/* Make native dropdowns match the theme colors perfectly */
 select option {
-  background-color: var(--panel-bg);
+  background-color: var(--bg-solid);
   color: var(--text-primary);
 }
 
