@@ -843,7 +843,7 @@ body {
 /* Force solid backgrounds matching the theme, avoiding alpha-channel rendering bugs */
 select option {
   background-color: var(--bg-solid);
-  color: var(--accent);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
