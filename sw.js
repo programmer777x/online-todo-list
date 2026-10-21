@@ -28,7 +28,7 @@
 //
 // === FIXES ===
 //
-// - Bumped CACHE_NAME from `todo-cache-v5` to `todo-cache-v5` so browsers discard the stale v1
+// - Bumped CACHE_NAME from `todo-cache-v6` to `todo-cache-v6` so browsers discard the stale v1
 //   cache and fetch the current CSS/JS. This was the reason recent UI fixes were not appearing
 //   even after a hard refresh — the v1 worker was serving cached assets before the network
 //   request ever went out. Bump this string on every deploy that changes cached files.
@@ -40,7 +40,7 @@
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v5';
+const CACHE_NAME = 'todo-cache-v6';
 
 const ASSETS_TO_CACHE = [
   './',
