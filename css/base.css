@@ -224,6 +224,7 @@ body {
 .theme-select {
   font-family: inherit;
   font-size: 0.875rem;
+  font-weight: 600;
   color: var(--text-primary);
   background: var(--input-bg);
   border: 1px solid var(--input-border);
@@ -842,15 +843,14 @@ body {
 
 /* Force solid backgrounds matching the theme, avoiding alpha-channel rendering bugs */
 select option {
-  background-color: var(--bg-solid);
-  color: var(--accent);
+  background-color: var(--menu-bg);
+  color: var(--text-primary);
   font-weight: 600;
 }
 
-/* TEST: Force Avocado dropdown to dramatic red */
+/* Avocado needs a visibly green tint: --input-bg (#fcfdf6) is too pale to read as green */
 [data-theme="avocado"] select option {
-  background-color: red !important;
-  color: white !important;
+  background-color: #dcedc8;
 }
 
 /* ================================================================================================
