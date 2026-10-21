@@ -1147,3 +1147,14 @@ select option {
 .sections:has(.task-text mark) .task-drag-handle {
   display: none;
 }
+
+/* Testing only: tiny build badge, fixed top-left so it's obvious which code is running. Remove before merging to main. */
+#build-version {
+  position: fixed;
+  top: 2px;
+  left: 6px;
+  font-size: 0.625rem;
+  opacity: 0.5;
+  z-index: 9999;
+  pointer-events: none;
+}
