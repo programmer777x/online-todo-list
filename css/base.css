@@ -224,6 +224,7 @@ body {
 .theme-select {
   font-family: inherit;
   font-size: 0.875rem;
+  font-weight: 600;
   color: var(--text-primary);
   background: var(--input-bg);
   border: 1px solid var(--input-border);
@@ -842,9 +843,13 @@ body {
 
 /* Force solid backgrounds matching the theme, avoiding alpha-channel rendering bugs */
 select option {
-  background-color: var(--bg-solid);
+  background-color: var(--menu-bg);
   color: var(--text-primary);
   font-weight: 600;
+}
+
+[data-theme="avocado"] select option {
+  background-color: var(--input-bg);
 }
 
 /* ================================================================================================
