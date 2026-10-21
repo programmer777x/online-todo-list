@@ -843,19 +843,20 @@ body {
 /* ================================================================================================
    12. TASK ACTION MENU
    ------------------------------------------------------------------------------------------------
-   Mobile-only dropdown, anchored to the right edge of the task row. Rendered by app.js only when
-   a task's menu is open; the base rule below gives it its shape.
+   Mobile-only dropdown, anchored to the ⋯ button's viewport coordinates. Rendered by render.js
+   into `document.body` (not into the task row) specifically to escape the `.task-section`
+   `backdrop-filter` stacking context — a menu rendered inside a blurred parent cannot float
+   above a subsequent section no matter what z-index it carries.
 
-   VISIBILITY NOTE: this menu element is created by app.js only when a menu is open, so it does
-   not need a display: none default. The display: none in the earlier version was the bug — it
-   hid the menu even when app.js had rendered it. There is no display rule here at all now.
+   Because the menu is body-mounted, its position is `fixed` and its top/left pixels are set
+   inline by `positionMenu()` in render.js. The CSS here supplies the box, the animation, and
+   the z-index that puts it above everything else on the page. Visibility (whether the menu
+   exists at all) is controlled by JS: `renderActionMenu` returns null unless a menu is open.
    ================================================================================================ */
 
 .task-action-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  z-index: 50;
+  position: fixed;
+  z-index: 9999;
   min-width: 190px;
   max-width: min(260px, calc(100vw - 32px));
   padding: var(--space-1);
@@ -863,14 +864,10 @@ body {
   border: 1px solid var(--menu-border);
   border-radius: var(--radius-md);
   box-shadow: var(--menu-shadow);
-  transform-origin: top right;
   animation: task-menu-in var(--transition-med) both;
 }
 
 .task-action-menu.is-flipped {
-  top: auto;
-  bottom: calc(100% + 6px);
-  transform-origin: bottom right;
   animation-name: task-menu-in-up;
 }
 
