@@ -224,7 +224,6 @@ body {
 .theme-select {
   font-family: inherit;
   font-size: 0.875rem;
-  font-weight: 600;
   color: var(--text-primary);
   background: var(--input-bg);
   border: 1px solid var(--input-border);
@@ -843,13 +842,15 @@ body {
 
 /* Force solid backgrounds matching the theme, avoiding alpha-channel rendering bugs */
 select option {
-  background-color: var(--menu-bg);
-  color: var(--text-primary);
+  background-color: var(--bg-solid);
+  color: var(--accent);
   font-weight: 600;
 }
 
+/* TEST: Force Avocado dropdown to dramatic red */
 [data-theme="avocado"] select option {
-  background-color: var(--input-bg);
+  background-color: red !important;
+  color: white !important;
 }
 
 /* ================================================================================================
@@ -1146,15 +1147,4 @@ select option {
 /* Hide the drag handle when the view is filtered by a search query. */
 .sections:has(.task-text mark) .task-drag-handle {
   display: none;
-}
-
-/* Testing only: tiny build badge, fixed top-left so it's obvious which code is running. Remove before merging to main. */
-#build-version {
-  position: fixed;
-  top: 2px;
-  left: 6px;
-  font-size: 0.625rem;
-  opacity: 0.5;
-  z-index: 9999;
-  pointer-events: none;
 }
