@@ -28,11 +28,11 @@
 //
 // === FIXES ===
 //
-// - Bumped CACHE_NAME from `todo-cache-v1` to `todo-cache-v2` so browsers discard the stale v1
+// - Bumped CACHE_NAME from `todo-cache-v2` to `todo-cache-v2` so browsers discard the stale v1
 //   cache and fetch the current CSS/JS. This was the reason recent UI fixes were not appearing
 //   even after a hard refresh — the v1 worker was serving cached assets before the network
 //   request ever went out. Bump this string on every deploy that changes cached files.
-// - Corrected the maskable icon filename in ASSETS_TO_CACHE from `./icons/icon-512-maskable.png`
+// - Corrected the maskable icon filename in ASSETS_TO_CACHE from `./icons/icon-maskable-512.png`
 //   to `./icons/icon-maskable-512.png`, matching the actual file on disk. The old path caused
 //   `cache.addAll()` to reject during install, which silently aborted the precache step.
 //
