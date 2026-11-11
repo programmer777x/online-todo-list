@@ -18,6 +18,17 @@
 //       Header button text/title is updated from the supabase-auth-changed
 //       event that sync.js dispatches.
 //
+// 1.2 — Auth client fix. The auth handlers previously called
+//       window.supabase.auth.* -- but window.supabase is the raw UMD library,
+//       not an initialized client, so window.supabase.auth was undefined and
+//       clicking the Sign In button threw TypeError on getSession(). Now:
+//       the click handler reads session state from window.sync.getSession()
+//       (sync.js's already-initialized currentSession), and the sign-out,
+//       signInWithOtp, and verifyOtp calls each construct a local
+//       createClient(SUPABASE_URL, SUPABASE_ANON_KEY) instance. Supabase
+//       shares session localStorage across clients per origin, so a second
+//       client picks up the session sync.js manages without any wiring.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -77,6 +88,15 @@
 //   hardcoded `scrollSensitivity: 200` with the dynamic value. Because SortableJS caches
 //   config at construction time, the value is re-evaluated on every `render()` — which runs
 //   on resize, so orientation changes are handled.
+// - Auth handlers crashed with "Cannot read properties of undefined (reading 'getSession')"
+//   because they were calling window.supabase.auth.* on the raw UMD library, which has no
+//   .auth until a client has been created. The click handler now reads session state from
+//   window.sync.getSession() (the currentSession sync.js already tracks), and the sign-out,
+//   signInWithOtp, and verifyOtp calls each build a local
+//   createClient(SUPABASE_URL, SUPABASE_ANON_KEY) instance. Supabase's session storage is
+//   shared across clients per origin, so the second instance picks up the session sync.js
+//   manages, and sync.js's onAuthStateChange listener (next change) picks up auth events the
+//   ui.js instance produces.
 //
 // ================================================================================================
 
@@ -566,10 +586,12 @@ function wireEvents() {
 function wireAuthEvents() {
   // Open modal / Sign out
   dom.authButton.addEventListener('click', async () => {
-    const { data } = await window.supabase.auth.getSession();
-    if (data.session) {
+    const session = window.sync.getSession();
+    if (session) {
       if (window.confirm('Sign out? Local data will remain on this device.')) {
-        await window.supabase.auth.signOut();
+        // Since window.supabase is just the library, we use the initialized client
+        // exposed by sync.js, or we can re-initialize one here.
+        await window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY).auth.signOut();
       }
     } else {
       dom.authStepEmail.hidden = false;
@@ -594,7 +616,8 @@ function wireAuthEvents() {
     dom.authSendEmailBtn.disabled = true;
     dom.authErrorEmail.textContent = '';
 
-    const { error } = await window.supabase.auth.signInWithOtp({
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { error } = await client.auth.signInWithOtp({
       email: email,
       options: {
         shouldCreateUser: true,
@@ -624,7 +647,8 @@ function wireAuthEvents() {
     dom.authVerifyCodeBtn.disabled = true;
     dom.authErrorCode.textContent = '';
 
-    const { data, error } = await window.supabase.auth.verifyOtp({
+    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data, error } = await client.auth.verifyOtp({
       email: email,
       token: token,
       type: 'magiclink'
