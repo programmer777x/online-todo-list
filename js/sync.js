@@ -13,6 +13,15 @@
 //        transition (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED) now dispatches
 //        a 'supabase-auth-changed' custom event on window, so the header
 //        button in ui.js can update its label without polling.
+// v1.2 - initSync() rewritten so the auth listener is registered before the
+//        initial getSession() resolves, and the already-signed-in case
+//        dispatches 'supabase-auth-changed' immediately after the first
+//        fetch. Without that immediate dispatch, the header button stayed
+//        on "Sign in to sync" until the next auth event fired, even when a
+//        session was already in localStorage. Also: because ui.js now signs
+//        in and out via its own short-lived createClient() instance, this
+//        listener is what catches those transitions and keeps currentSession
+//        (and the exported getSession) in sync.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -32,6 +41,11 @@
 //   never triggered a fetch. The new onAuthStateChange listener closes
 //   that gap. The initial getSession() call is still kept for the
 //   first-load case where no auth event fires.
+// - The already-signed-in case now dispatches 'supabase-auth-changed'
+//   immediately after the first fetch. Prior code fired nothing on load,
+//   so a page reload with a persisted session showed the header button
+//   as "Sign in to sync" until some later auth event happened. The UI
+//   therefore misreported the signed-in state on every reload.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -42,9 +56,11 @@ let currentSession = null;
 
 async function initSync() {
     try {
-        // Listen for auth changes
+        // Listen for auth changes (login, logout, token refresh)
         supabaseClient.auth.onAuthStateChange((_event, session) => {
             currentSession = session;
+            
+            // Tell the UI to update the button
             window.dispatchEvent(new CustomEvent('supabase-auth-changed', { detail: { session } }));
             
             if (session) {
@@ -61,6 +77,7 @@ async function initSync() {
             console.log("Sync: User is signed in.");
             await processOfflineQueue();
             await fetchRemoteState();
+            // Fire event immediately on load so the UI updates
             window.dispatchEvent(new CustomEvent('supabase-auth-changed', { detail: { session: currentSession } }));
         } else {
             console.log("Sync: User is signed out. Local only.");
