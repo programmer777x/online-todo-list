@@ -11,15 +11,26 @@
 //
 // === REVISIONS ===
 //
-//
+// 1.1 — Supabase Stage 3. Added the auth modal wiring: auth elements cached in
+//       cacheDom(), wireAuthEvents() bound in init() right after wireEvents().
+//       The auth button toggles between opening the modal (signed out) and
+//       confirming sign-out (signed in); the modal drives Supabase's OTP flow.
+//       Header button text/title is updated from the supabase-auth-changed
+//       event that sync.js dispatches.
 //
 // ================================================================================================
 //
 // === ADDED ===
 //
 // - Initial creation. Extracted the event handling and initialization logic from the original app.js.
-//
-//
+// - Auth DOM references in cacheDom(): authButton, authModal, authClose,
+//   authStepEmail, authStepCode, authEmailInput, authCodeInput,
+//   authSendEmailBtn, authVerifyCodeBtn, authErrorEmail, authErrorCode.
+// - wireAuthEvents() — binds the auth button (open modal / confirm sign-out),
+//   the modal close button, the send-email button (signInWithOtp), the
+//   verify-code button (verifyOtp with type 'magiclink'), and listens for
+//   the supabase-auth-changed custom event from sync.js to update the
+//   header button label.
 //
 // ================================================================================================
 //
@@ -549,6 +560,101 @@ function wireEvents() {
 
 
 /* ================================================================================================
+   AUTH UI
+   ================================================================================================ */
+
+function wireAuthEvents() {
+  // Open modal / Sign out
+  dom.authButton.addEventListener('click', async () => {
+    const { data } = await window.supabase.auth.getSession();
+    if (data.session) {
+      if (window.confirm('Sign out? Local data will remain on this device.')) {
+        await window.supabase.auth.signOut();
+      }
+    } else {
+      dom.authStepEmail.hidden = false;
+      dom.authStepCode.hidden = true;
+      dom.authErrorEmail.textContent = '';
+      dom.authErrorCode.textContent = '';
+      dom.authEmailInput.value = '';
+      dom.authCodeInput.value = '';
+      dom.authModal.showModal();
+    }
+  });
+
+  // Close modal
+  dom.authClose.addEventListener('click', () => dom.authModal.close());
+
+  // Send Email
+  dom.authSendEmailBtn.addEventListener('click', async () => {
+    const email = dom.authEmailInput.value.trim();
+    if (!email) return;
+    
+    dom.authSendEmailBtn.textContent = 'Sending...';
+    dom.authSendEmailBtn.disabled = true;
+    dom.authErrorEmail.textContent = '';
+
+    const { error } = await window.supabase.auth.signInWithOtp({
+      email: email,
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: window.location.origin + window.location.pathname
+      }
+    });
+
+    dom.authSendEmailBtn.textContent = 'Send sign-in email';
+    dom.authSendEmailBtn.disabled = false;
+
+    if (error) {
+      dom.authErrorEmail.textContent = error.message;
+    } else {
+      dom.authStepEmail.hidden = true;
+      dom.authStepCode.hidden = false;
+      dom.authCodeInput.focus();
+    }
+  });
+
+  // Verify Code
+  dom.authVerifyCodeBtn.addEventListener('click', async () => {
+    const email = dom.authEmailInput.value.trim();
+    const token = dom.authCodeInput.value.trim();
+    if (!email || !token) return;
+
+    dom.authVerifyCodeBtn.textContent = 'Verifying...';
+    dom.authVerifyCodeBtn.disabled = true;
+    dom.authErrorCode.textContent = '';
+
+    const { data, error } = await window.supabase.auth.verifyOtp({
+      email: email,
+      token: token,
+      type: 'magiclink'
+    });
+
+    dom.authVerifyCodeBtn.textContent = 'Verify code';
+    dom.authVerifyCodeBtn.disabled = false;
+
+    if (error) {
+      dom.authErrorCode.textContent = error.message;
+    } else {
+      dom.authModal.close();
+    }
+  });
+
+  // Listen for auth changes from sync.js
+  window.addEventListener('supabase-auth-changed', (e) => {
+    const session = e.detail.session;
+    if (session) {
+      dom.authButton.textContent = session.user.email.split('@')[0];
+      dom.authButton.title = "Click to sign out";
+    } else {
+      dom.authButton.textContent = 'Sign in to sync';
+      dom.authButton.title = "Click to sign in";
+    }
+  });
+}
+
+
+/* ================================================================================================
    INIT
    ================================================================================================ */
 
@@ -558,6 +664,7 @@ function init() {
   applyTheme(state.theme);
   renderListSwitcher();
   wireEvents();
+  wireAuthEvents();
   render();
 
   // Initialize SortableJS after the first render.
