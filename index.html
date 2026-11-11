@@ -197,13 +197,23 @@
   </div>
 
   <!-- Scripts: loaded as plain scripts (not modules) to preserve file:// compatibility.
-       Order matters: Sortable -> supabase -> config -> store -> render -> ui. -->
+       Order matters: Sortable -> supabase -> config -> store -> render -> ui -> sync. -->
   <script src="js/Sortable.min.js"></script>
   <script src="js/supabase.js"></script>
   <script src="js/config.js"></script>
   <script src="js/store.js"></script>
   <script src="js/render.js"></script>
   <script src="js/ui.js"></script>
+  <script src="js/sync.js"></script>
+
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      // Initialize Supabase sync if the module loaded successfully
+      if (window.sync) {
+        window.sync.init();
+      }
+    });
+  </script>
 
 </body>
 </html>
