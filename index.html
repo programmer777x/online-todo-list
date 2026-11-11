@@ -71,6 +71,9 @@
           >🗑</button>
         </div>
 
+        <!-- ---- Auth Button ---- -->
+        <button type="button" id="auth-button" class="button auth-button">Sign in to sync</button>
+
         <!-- ---- Theme switcher ---- -->
         <label class="visually-hidden" for="theme-select">Theme</label>
         <select id="theme-select" class="theme-select" aria-label="Theme">
@@ -193,6 +196,31 @@
       </div>
       <p class="footer-note">Saved locally in your browser. No account, no server.</p>
     </footer>
+
+    <!-- ============================ AUTH MODAL ============================ -->
+    <dialog id="auth-modal" class="auth-modal">
+      <div class="auth-modal-content">
+        <button type="button" id="auth-close" class="icon-button auth-close" aria-label="Close">×</button>
+        
+        <!-- Step 1: Email -->
+        <div id="auth-step-email">
+          <h2>Sign in to sync</h2>
+          <p>Enter your email to receive a magic link and a 6-digit code.</p>
+          <input type="email" id="auth-email" placeholder="you@example.com" required>
+          <button type="button" id="auth-send-email" class="button button-primary">Send sign-in email</button>
+          <p id="auth-error-email" class="auth-error"></p>
+        </div>
+
+        <!-- Step 2: Code -->
+        <div id="auth-step-code" hidden>
+          <h2>Enter your code</h2>
+          <p>Check your email for the 6-digit code or tap the magic link.</p>
+          <input type="text" id="auth-code" placeholder="123456" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required>
+          <button type="button" id="auth-verify-code" class="button button-primary">Verify code</button>
+          <p id="auth-error-code" class="auth-error"></p>
+        </div>
+      </div>
+    </dialog>
 
   </div>
 
