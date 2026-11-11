@@ -17,7 +17,11 @@
 //
 // === REVISIONS ===
 //
-//
+// 1.1 — Supabase Stage 3. Added hydrateFromRemote() so js/sync.js can replace
+//       the local state with cloud data after a successful load-time fetch.
+//       The function is exposed at window.store.hydrateFromRemote so the sync
+//       module can call it. Cloud-empty is a no-op — local state is left
+//       intact for the upcoming migration dialog to handle.
 //
 // ================================================================================================
 //
@@ -31,8 +35,11 @@
 //   `section`, so SortableJS's `onEnd` can move a subtask to a new parent or a top-level task to
 //   a different section. A follow-up `reorderTask()` places it at the exact visual index; this
 //   function only handles the parent/section change itself.
-//
-//
+// - `hydrateFromRemote(remoteLists, remoteTasks)` — load-time hydration path for
+//   signed-in users. Replaces state.lists with cloud data, keeps the current
+//   activeListId when it still exists in the new set (otherwise picks the first
+//   available), saves to localStorage, and re-renders. Exposed as
+//   window.store.hydrateFromRemote for sync.js to call. Cloud-empty is a no-op.
 //
 // ================================================================================================
 //
@@ -463,3 +470,81 @@ function reparentTask(taskId, newParentId, newSection) {
   saveState();
   return true;
 }
+
+
+/* ================================================================================================
+   SUPABASE SYNC BRIDGE
+   ================================================================================================ */
+
+/**
+ * Replaces the local state with data fetched from the cloud.
+ * Called by sync.js after a successful load-time fetch.
+ *
+ * Cloud-empty is a no-op on purpose: on a signed-in user's first run,
+ * the cloud has nothing yet and the local state must not be wiped —
+ * the upcoming migration dialog is what offers to upload local data.
+ * Only a non-empty remote list set replaces the local state.
+ *
+ * @param {Array} remoteLists - Array of list objects from Supabase.
+ * @param {Array} remoteTasks - Array of task objects from Supabase.
+ */
+function hydrateFromRemote(remoteLists, remoteTasks) {
+  if (!remoteLists || remoteLists.length === 0) {
+    // If cloud is empty, do NOT overwrite local data.
+    // This is handled by the upcoming migration dialog.
+    return;
+  }
+
+  // Reconstruct the local state shape
+  const newLists = {};
+
+  remoteLists.forEach(list => {
+    newLists[list.id] = {
+      id: list.id,
+      name: list.name,
+      tasks: []
+    };
+  });
+
+  remoteTasks.forEach(task => {
+    if (newLists[task.list_id]) {
+      newLists[task.list_id].tasks.push({
+        id: task.id,
+        text: task.text,
+        done: task.done,
+        section: task.section,
+        parentId: task.parent_id,
+        createdAt: Number(task.created_at)
+      });
+    }
+  });
+
+  // Determine the active list
+  let activeListId = state.activeListId;
+  if (!newLists[activeListId]) {
+    const listIds = Object.keys(newLists);
+    activeListId = listIds.length > 0 ? listIds[0] : null;
+  }
+
+  // Update global state
+  state.lists = newLists;
+  state.activeListId = activeListId;
+
+  saveState();
+
+  // Trigger the UI to update. render() is the function in render.js; renderApp() is a
+  // fallback for any build that names it differently. If neither is loaded, this is a
+  // no-op — saveState() has already persisted the change, so a reload shows the new data.
+  if (typeof render === 'function') {
+    render();
+  } else if (typeof renderApp === 'function') {
+    renderApp();
+  }
+}
+
+// Expose to the global window so sync.js can call it. The file has no window.store
+// export block above (all functions are top-level and therefore already on window),
+// but sync.js's load-time fetch calls window.store.hydrateFromRemote specifically,
+// so this bridge is required.
+window.store = window.store || {};
+window.store.hydrateFromRemote = hydrateFromRemote;
