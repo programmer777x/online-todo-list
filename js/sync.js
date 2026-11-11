@@ -9,6 +9,10 @@
 // === REVISIONS ===
 // =============================================================================
 // v1.0 - Initial creation for Stage 3 sync-first integration.
+// v1.1 - Wire the onAuthStateChange listener into initSync(). Every auth
+//        transition (SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED) now dispatches
+//        a 'supabase-auth-changed' custom event on window, so the header
+//        button in ui.js can update its label without polling.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -16,10 +20,18 @@
 // - Offline queue implementation (todolist.v1.pending).
 // - Initial fetch logic for lists and tasks.
 // - Mutation push handlers.
+// - onAuthStateChange listener in initSync(): updates currentSession,
+//   dispatches 'supabase-auth-changed' to the UI, and — on a signed-in
+//   transition — drains the offline queue and fetches remote state.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
-// (None yet)
+// - Auth transitions were previously only sampled once at startup via
+//   getSession(). A sign-in or sign-out performed through the new auth
+//   modal never updated currentSession, never dispatched any UI event, and
+//   never triggered a fetch. The new onAuthStateChange listener closes
+//   that gap. The initial getSession() call is still kept for the
+//   first-load case where no auth event fires.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -30,6 +42,17 @@ let currentSession = null;
 
 async function initSync() {
     try {
+        // Listen for auth changes
+        supabaseClient.auth.onAuthStateChange((_event, session) => {
+            currentSession = session;
+            window.dispatchEvent(new CustomEvent('supabase-auth-changed', { detail: { session } }));
+            
+            if (session) {
+                processOfflineQueue();
+                fetchRemoteState();
+            }
+        });
+
         const { data, error } = await supabaseClient.auth.getSession();
         if (error) throw error;
         currentSession = data.session;
@@ -38,6 +61,7 @@ async function initSync() {
             console.log("Sync: User is signed in.");
             await processOfflineQueue();
             await fetchRemoteState();
+            window.dispatchEvent(new CustomEvent('supabase-auth-changed', { detail: { session: currentSession } }));
         } else {
             console.log("Sync: User is signed out. Local only.");
         }
