@@ -25,7 +25,11 @@
 //
 // === REVISIONS ===
 //
-//
+// 1.1 — Supabase Stage 3. Added the 11 auth UI element references (button,
+//       modal, close, both step containers, both inputs, both action buttons,
+//       both error paragraphs) to cacheDom(). ui.js's new wireAuthEvents()
+//       reads these from `dom`, so they must be cached here alongside the
+//       existing task/list/theme references.
 //
 // ================================================================================================
 //
@@ -35,8 +39,9 @@
 // - Drag handle element rendered at the start of every task row, and `data-drag-state` /
 //   `data-drop-state` attributes on the task <li>. Enables drag-to-reorder without changing
 //   the row's existing pointer-event targets.
-//
-//
+// - Auth UI DOM references in cacheDom(): authButton, authModal, authClose,
+//   authStepEmail, authStepCode, authEmailInput, authCodeInput,
+//   authSendEmailBtn, authVerifyCodeBtn, authErrorEmail, authErrorCode.
 //
 // ================================================================================================
 //
@@ -87,6 +92,19 @@ function cacheDom() {
     dom.taskLists[section] = document.querySelector(`[data-list-for="${section}"]`);
     dom.sectionCounts[section] = document.querySelector(`[data-count-for="${section}"]`);
   }
+
+  // Supabase Auth UI
+  dom.authButton = document.getElementById('auth-button');
+  dom.authModal = document.getElementById('auth-modal');
+  dom.authClose = document.getElementById('auth-close');
+  dom.authStepEmail = document.getElementById('auth-step-email');
+  dom.authStepCode = document.getElementById('auth-step-code');
+  dom.authEmailInput = document.getElementById('auth-email');
+  dom.authCodeInput = document.getElementById('auth-code');
+  dom.authSendEmailBtn = document.getElementById('auth-send-email');
+  dom.authVerifyCodeBtn = document.getElementById('auth-verify-code');
+  dom.authErrorEmail = document.getElementById('auth-error-email');
+  dom.authErrorCode = document.getElementById('auth-error-code');
 }
 
 /** True when the viewport is below the action-menu breakpoint. */
