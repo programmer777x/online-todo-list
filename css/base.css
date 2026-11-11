@@ -22,6 +22,7 @@
     13. Utility
     14. Responsive
     15. Drag-to-reorder
+    16. Auth UI
 
    Responsive strategy:
      - Default (all widths): the ⋯ button and its menu are VISIBLE, inline actions are VISIBLE.
@@ -1147,4 +1148,101 @@ select option {
 /* Hide the drag handle when the view is filtered by a search query. */
 .sections:has(.task-text mark) .task-drag-handle {
   display: none;
+}
+
+/* ================================================================================================
+   16. AUTH UI
+   ================================================================================================ */
+
+.auth-button {
+  margin-right: var(--space-2);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.auth-button:hover {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.auth-modal {
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-lg);
+  background: var(--menu-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--text-primary);
+  padding: 0;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: var(--menu-shadow);
+}
+
+.auth-modal::backdrop {
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.auth-modal-content {
+  padding: var(--space-5) var(--space-4);
+  position: relative;
+}
+
+.auth-close {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+
+.auth-close:hover {
+  color: var(--text-primary);
+}
+
+.auth-modal h2 {
+  margin-top: 0;
+  margin-bottom: var(--space-2);
+  font-size: 1.25rem;
+}
+
+.auth-modal p {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-4);
+}
+
+.auth-modal input {
+  width: 100%;
+  padding: var(--space-3);
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-md);
+  background: var(--input-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 1rem;
+}
+
+.auth-modal input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--accent-glow);
+}
+
+.auth-modal .button {
+  width: 100%;
+  padding: var(--space-3);
+}
+
+.auth-error {
+  color: var(--danger);
+  font-size: 0.8125rem;
+  margin-top: var(--space-2);
+  min-height: 1.2em;
 }
