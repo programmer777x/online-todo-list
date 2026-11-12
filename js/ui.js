@@ -29,6 +29,14 @@
 //       shares session localStorage across clients per origin, so a second
 //       client picks up the session sync.js manages without any wiring.
 //
+// 1.3 — Auth refactor (link + password). The 6-digit OTP flow is gone.
+//       The modal is now link-first ("Send sign-in link") with a "Use
+//       password instead" toggle that reveals a password step. All auth
+//       calls route through window.sync.getClient() so sync.js's
+//       onAuthStateChange listener sees every transition; the previous
+//       per-call createClient() pattern let those events bypass the
+//       listener and let currentSession drift.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -37,11 +45,17 @@
 // - Auth DOM references in cacheDom(): authButton, authModal, authClose,
 //   authStepEmail, authStepCode, authEmailInput, authCodeInput,
 //   authSendEmailBtn, authVerifyCodeBtn, authErrorEmail, authErrorCode.
+//   (Superseded in 1.3 by the link/password set.)
 // - wireAuthEvents() — binds the auth button (open modal / confirm sign-out),
 //   the modal close button, the send-email button (signInWithOtp), the
 //   verify-code button (verifyOtp with type 'magiclink'), and listens for
 //   the supabase-auth-changed custom event from sync.js to update the
 //   header button label.
+// - wireAuthEvents() for the link/password flow: auth button (open modal /
+//   confirm sign-out via the shared client), close button, "Use password
+//   instead" toggle link, send-link button (signInWithOtp), sign-in with
+//   password button (signInWithPassword), and the supabase-auth-changed
+//   listener. See the 1.3 revision entry.
 //
 // ================================================================================================
 //
@@ -97,6 +111,12 @@
 //   shared across clients per origin, so the second instance picks up the session sync.js
 //   manages, and sync.js's onAuthStateChange listener (next change) picks up auth events the
 //   ui.js instance produces.
+// - Auth events bypassed sync.js's onAuthStateChange listener. The per-call
+//   createClient() instances in the 1.2 version produced auth events that only
+//   their own client observed, so currentSession in sync.js could go stale and
+//   the header button could lag behind the real session. All auth calls now use
+//   window.sync.getClient(), the single client whose onAuthStateChange is
+//   registered in sync.js -- events always reach that listener.
 //
 // ================================================================================================
 
@@ -589,17 +609,17 @@ function wireAuthEvents() {
     const session = window.sync.getSession();
     if (session) {
       if (window.confirm('Sign out? Local data will remain on this device.')) {
-        // Since window.supabase is just the library, we use the initialized client
-        // exposed by sync.js, or we can re-initialize one here.
-        await window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY).auth.signOut();
+        await window.sync.getClient().auth.signOut();
       }
     } else {
       dom.authStepEmail.hidden = false;
-      dom.authStepCode.hidden = true;
+      dom.authStepPassword.hidden = true;
       dom.authErrorEmail.textContent = '';
-      dom.authErrorCode.textContent = '';
+      dom.authErrorPassword.textContent = '';
+      dom.authSentMsg.hidden = true;
+      dom.authSendEmailBtn.hidden = false;
       dom.authEmailInput.value = '';
-      dom.authCodeInput.value = '';
+      dom.authPasswordInput.value = '';
       dom.authModal.showModal();
     }
   });
@@ -607,7 +627,15 @@ function wireAuthEvents() {
   // Close modal
   dom.authClose.addEventListener('click', () => dom.authModal.close());
 
-  // Send Email
+  // Toggle Password Step
+  dom.authPasswordToggle.addEventListener('click', (e) => {
+    e.preventDefault();
+    dom.authStepEmail.hidden = true;
+    dom.authStepPassword.hidden = false;
+    dom.authPasswordInput.focus();
+  });
+
+  // Send Email Link
   dom.authSendEmailBtn.addEventListener('click', async () => {
     const email = dom.authEmailInput.value.trim();
     if (!email) return;
@@ -616,8 +644,7 @@ function wireAuthEvents() {
     dom.authSendEmailBtn.disabled = true;
     dom.authErrorEmail.textContent = '';
 
-    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const { error } = await client.auth.signInWithOtp({
+    const { error } = await window.sync.getClient().auth.signInWithOtp({
       email: email,
       options: {
         shouldCreateUser: true,
@@ -625,40 +652,38 @@ function wireAuthEvents() {
       }
     });
 
-    dom.authSendEmailBtn.textContent = 'Send sign-in email';
+    dom.authSendEmailBtn.textContent = 'Send sign-in link';
     dom.authSendEmailBtn.disabled = false;
 
     if (error) {
       dom.authErrorEmail.textContent = error.message;
     } else {
-      dom.authStepEmail.hidden = true;
-      dom.authStepCode.hidden = false;
-      dom.authCodeInput.focus();
+      dom.authSendEmailBtn.hidden = true;
+      dom.authSentMsg.hidden = false;
+      dom.authPasswordToggle.parentElement.hidden = true;
     }
   });
 
-  // Verify Code
-  dom.authVerifyCodeBtn.addEventListener('click', async () => {
+  // Sign in with Password
+  dom.authSignInPasswordBtn.addEventListener('click', async () => {
     const email = dom.authEmailInput.value.trim();
-    const token = dom.authCodeInput.value.trim();
-    if (!email || !token) return;
+    const password = dom.authPasswordInput.value;
+    if (!email || !password) return;
 
-    dom.authVerifyCodeBtn.textContent = 'Verifying...';
-    dom.authVerifyCodeBtn.disabled = true;
-    dom.authErrorCode.textContent = '';
+    dom.authSignInPasswordBtn.textContent = 'Signing in...';
+    dom.authSignInPasswordBtn.disabled = true;
+    dom.authErrorPassword.textContent = '';
 
-    const client = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-    const { data, error } = await client.auth.verifyOtp({
+    const { data, error } = await window.sync.getClient().auth.signInWithPassword({
       email: email,
-      token: token,
-      type: 'magiclink'
+      password: password
     });
 
-    dom.authVerifyCodeBtn.textContent = 'Verify code';
-    dom.authVerifyCodeBtn.disabled = false;
+    dom.authSignInPasswordBtn.textContent = 'Sign in';
+    dom.authSignInPasswordBtn.disabled = false;
 
     if (error) {
-      dom.authErrorCode.textContent = error.message;
+      dom.authErrorPassword.textContent = error.message;
     } else {
       dom.authModal.close();
     }
