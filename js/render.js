@@ -31,6 +31,13 @@
 //       reads these from `dom`, so they must be cached here alongside the
 //       existing task/list/theme references.
 //
+// 1.2 — Auth refactor (link + password). The auth cache no longer holds any
+//       OTP-specific references. cacheDom() now caches the email step,
+//       password step, email/password inputs, send-link and sign-in buttons,
+//       both error paragraphs, the "Use password instead" toggle link, and
+//       the sent-email success message. ui.js's rewritten wireAuthEvents()
+//       reads this new set.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -42,6 +49,11 @@
 // - Auth UI DOM references in cacheDom(): authButton, authModal, authClose,
 //   authStepEmail, authStepCode, authEmailInput, authCodeInput,
 //   authSendEmailBtn, authVerifyCodeBtn, authErrorEmail, authErrorCode.
+//   (Superseded in 1.2 by the link/password set below.)
+// - Auth UI DOM references for the link/password flow: authButton, authModal,
+//   authClose, authStepEmail, authStepPassword, authEmailInput,
+//   authPasswordInput, authSendEmailBtn, authSignInPasswordBtn,
+//   authErrorEmail, authErrorPassword, authPasswordToggle, authSentMsg.
 //
 // ================================================================================================
 //
@@ -98,13 +110,15 @@ function cacheDom() {
   dom.authModal = document.getElementById('auth-modal');
   dom.authClose = document.getElementById('auth-close');
   dom.authStepEmail = document.getElementById('auth-step-email');
-  dom.authStepCode = document.getElementById('auth-step-code');
+  dom.authStepPassword = document.getElementById('auth-step-password');
   dom.authEmailInput = document.getElementById('auth-email');
-  dom.authCodeInput = document.getElementById('auth-code');
+  dom.authPasswordInput = document.getElementById('auth-password');
   dom.authSendEmailBtn = document.getElementById('auth-send-email');
-  dom.authVerifyCodeBtn = document.getElementById('auth-verify-code');
+  dom.authSignInPasswordBtn = document.getElementById('auth-signin-password');
   dom.authErrorEmail = document.getElementById('auth-error-email');
-  dom.authErrorCode = document.getElementById('auth-error-code');
+  dom.authErrorPassword = document.getElementById('auth-error-password');
+  dom.authPasswordToggle = document.getElementById('auth-password-toggle');
+  dom.authSentMsg = document.getElementById('auth-sent-msg');
 }
 
 /** True when the viewport is below the action-menu breakpoint. */
