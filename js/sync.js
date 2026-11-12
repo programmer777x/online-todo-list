@@ -22,6 +22,15 @@
 //        in and out via its own short-lived createClient() instance, this
 //        listener is what catches those transitions and keeps currentSession
 //        (and the exported getSession) in sync.
+// v1.3 - Exposed the initialized supabaseClient instance as
+//        window.sync.getClient(). ui.js was creating its own short-lived
+//        createClient() instances for every auth call, which worked only
+//        because Supabase shares session localStorage per origin -- but the
+//        auth events those throwaway clients produced were never delivered
+//        to this module's onAuthStateChange listener, so currentSession
+//        could drift and the header button could lag the real session.
+//        Routing all auth calls through this single client fixes that at
+//        the source and removes the duplicate-client pattern entirely.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -32,6 +41,9 @@
 // - onAuthStateChange listener in initSync(): updates currentSession,
 //   dispatches 'supabase-auth-changed' to the UI, and — on a signed-in
 //   transition — drains the offline queue and fetches remote state.
+// - window.sync.getClient() — accessor for the single initialized client
+//   instance, so ui.js (and any future UI code) can call .auth.* on the
+//   exact client whose onAuthStateChange is registered here.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -46,6 +58,11 @@
 //   so a page reload with a persisted session showed the header button
 //   as "Sign in to sync" until some later auth event happened. The UI
 //   therefore misreported the signed-in state on every reload.
+// - ui.js was building its own createClient() for every auth action. The
+//   events those clients produced bypassed this module's onAuthStateChange
+//   listener, so currentSession could go stale and the header button could
+//   lag the real session. All auth calls now go through window.sync.getClient(),
+//   i.e. through the one client this file already manages.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -220,5 +237,6 @@ window.sync = {
     init: initSync,
     pushList,
     pushTask,
-    getSession: () => currentSession
+    getSession: () => currentSession,
+    getClient: () => supabaseClient
 };
