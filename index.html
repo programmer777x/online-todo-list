@@ -202,33 +202,33 @@
       <div class="auth-modal-content">
         <button type="button" id="auth-close" class="icon-button auth-close" aria-label="Close">×</button>
         
-        <!-- Step 1: Email -->
+        <!-- Persistent Heading and Email Input -->
+        <h2 id="auth-title">Sign in to sync</h2>
+        <p id="auth-subtitle">Enter your email to receive a sign-in link.</p>
+        <p id="auth-email-hint" style="font-size: 0.75rem; margin-top: -10px; margin-bottom: 15px; color: var(--text-muted);">The email comes from Supabase Auth (noreply@mail.app.supabase.io) with the subject "Confirm your email address". Check spam if you don't see it.</p>
+        
+        <input type="email" id="auth-email" placeholder="you@example.com" required>
+        <p id="auth-error-email" class="auth-error"></p>
+        
+        <!-- Link Flow (Step 1) -->
         <div id="auth-step-email">
-          <h2>Sign in to sync</h2>
-          <p>Enter your email and we'll send you a sign-in link.</p>
-          <p style="font-size: 0.75rem; margin-top: -10px; margin-bottom: 15px; color: var(--text-muted);">The email comes from Supabase Auth (noreply@mail.app.supabase.io) with the subject "Confirm your email address". Check spam if you don't see it.</p>
-          
-          <input type="email" id="auth-email" placeholder="you@example.com" required>
-          
           <button type="button" id="auth-send-email" class="button button-primary">Send sign-in link</button>
-          <p id="auth-error-email" class="auth-error"></p>
-          
           <div id="auth-sent-msg" class="auth-success" hidden>
-            Sign-in email sent. Check your inbox (and spam) for an email from Supabase Auth.
+            Sign-in email sent. Check your inbox (and spam).
           </div>
-
           <div style="margin-top: 20px; text-align: center;">
             <a href="#" id="auth-password-toggle" style="font-size: 0.8125rem; color: var(--text-secondary); text-decoration: underline;">Use password instead</a>
           </div>
         </div>
 
-        <!-- Step 2: Password (Hidden by default) -->
+        <!-- Password Flow (Step 2) -->
         <div id="auth-step-password" hidden>
-          <h2>Sign in with password</h2>
-          <p>Enter the password for your account.</p>
           <input type="password" id="auth-password" placeholder="Password" required>
           <button type="button" id="auth-signin-password" class="button button-primary">Sign in</button>
           <p id="auth-error-password" class="auth-error"></p>
+          <div style="margin-top: 15px; text-align: center;">
+            <a href="#" id="auth-email-toggle" style="font-size: 0.8125rem; color: var(--text-secondary); text-decoration: underline;">Use link instead</a>
+          </div>
         </div>
       </div>
     </dialog>
