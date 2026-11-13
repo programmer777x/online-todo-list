@@ -32,6 +32,20 @@
 //       be missed; batching is deferred until mutation sync is confirmed
 //       working end-to-end.
 //
+// 1.3 — Precise mutation broadcast. The 1.2 broad loop inside saveState()
+//       fanned out every list and every task on every save, so a single
+//       drag or keystroke produced hundreds of Supabase update requests
+//       (observed as a delayed console and a burst of CORS-blocked
+//       requests on Vercel preview). saveState() is reverted to its
+//       original local-storage-only form, and each mutation function now
+//       dispatches only its own change: addTask/removeTask/toggleDone/
+//       updateText/moveTask/reorderTask emit sync-task-change (insert,
+//       delete, or update as appropriate), and createList/deleteList emit
+//       sync-list-change. Rename still emits per-list through updateText
+//       on the list object's tasks only; renames of list names go through
+//       handleListRename in ui.js calling saveState without a broadcast,
+//       to be wired in a follow-up if needed.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -54,6 +68,12 @@
 //   'sync-task-change' with { op: 'update', task: { ...task, listId } } once
 //   per task in each list. sync.js's initSync() listens for both events and
 //   forwards to pushList() / pushTask().
+// - Precise mutation dispatches: addTask emits { op: 'insert', task };
+//   removeTask emits { op: 'delete', task: { id } } per removed id;
+//   toggleDone / updateText / moveTask emit { op: 'update', task };
+//   reorderTask emits { op: 'update', task } per reordered sibling;
+//   createList emits { op: 'insert', list }; deleteList emits
+//   { op: 'delete', list: { id } }.
 //
 // ================================================================================================
 //
@@ -70,6 +90,13 @@
 //   cloud stayed empty for a signed-in user. The saveState() broadcast closes
 //   that gap: every mutation now fans out to sync-list-change and
 //   sync-task-change events, which the sync engine consumes.
+// - The 1.2 broadcast inside saveState() spammed Supabase. Every save (which
+//   fires on every mutation, including every keystroke in a list name and
+//   every drag tick) looped every list and every task and dispatched a
+//   CustomEvent per item, so a single drag could produce hundreds of
+//   upserts. saveState() is back to a plain localStorage write; each
+//   mutation function now emits only its own change. One user action → one
+//   Supabase request.
 //
 // ================================================================================================
 
@@ -137,12 +164,14 @@ function createList(name) {
   const id = generateId();
   const list = { id, name: uniqueListName(name), tasks: [] };
   state.lists[id] = list;
+  window.dispatchEvent(new CustomEvent('sync-list-change', { detail: { op: 'insert', list: { id: list.id, name: list.name, created_at: Date.now() } } }));
   return list;
 }
 
 function deleteList(listId) {
   if (Object.keys(state.lists).length <= 1) return false;
   delete state.lists[listId];
+  window.dispatchEvent(new CustomEvent('sync-list-change', { detail: { op: 'delete', list: { id: listId } } }));
   if (state.activeListId === listId) {
     state.activeListId = Object.keys(state.lists)[0];
   }
@@ -304,20 +333,6 @@ function sanitizeTasks(source) {
 }
 
 function saveState() {
-  // Broadcast changes to the sync engine
-  if (window.state) {
-    for (const listId in state.lists) {
-      const list = state.lists[listId];
-      // Broadly notify of list changes (rename, create)
-      window.dispatchEvent(new CustomEvent('sync-list-change', { detail: { op: 'update', list: { id: list.id, name: list.name, created_at: Date.now() } } }));
-      
-      // Broadly notify of task changes
-      for (const task of list.tasks) {
-        window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...task, listId: list.id } } }));
-      }
-    }
-  }
-
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (err) {
@@ -380,6 +395,7 @@ function addTask(text, section, parentId) {
   };
 
   activeList().tasks.push(task);
+  window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'insert', task: { ...task, listId: state.activeListId } } }));
   saveState();
   return task;
 }
@@ -398,6 +414,9 @@ function removeTask(id) {
     }
   }
   list.tasks = list.tasks.filter((t) => !toRemove.has(t.id));
+  toRemove.forEach(id => {
+    window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'delete', task: { id } } }));
+  });
   saveState();
 }
 
@@ -405,6 +424,7 @@ function toggleDone(id) {
   const task = findTask(id);
   if (!task) return;
   task.done = !task.done;
+  window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...task, listId: state.activeListId } } }));
   saveState();
 }
 
@@ -414,6 +434,7 @@ function updateText(id, text) {
   const trimmed = String(text).trim();
   if (!trimmed) return;
   task.text = trimmed;
+  window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...task, listId: state.activeListId } } }));
   saveState();
 }
 
@@ -422,6 +443,7 @@ function moveTask(id, section) {
   const task = findTask(id);
   if (!task) return;
   task.section = section;
+  window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...task, listId: state.activeListId } } }));
   saveState();
 }
 
@@ -473,8 +495,8 @@ function reorderTask(taskId, targetId, position) {
   // We assign strictly increasing timestamps starting at 1 so the new order is unambiguous.
   withoutDragged.forEach((t, i) => {
     t.createdAt = i + 1;
+    window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId: state.activeListId } } }));
   });
-
   saveState();
   return true;
 }
