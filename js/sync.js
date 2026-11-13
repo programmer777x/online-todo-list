@@ -82,6 +82,29 @@
 //        re-queued after being drained. processOfflineQueue now checks the
 //        return value per item and keeps failing items in PENDING_KEY, so
 //        the queue survives a failed flush and drains on the next attempt.
+// v1.8 - Revert the v1.7 re-queue split. The v1.7 change removed the
+//        queueOfflineOperation() call from both push handlers and left
+//        processOfflineQueue to keep any items the handlers reported as
+//        failed. In practice that made the failure path bookkeeping-only:
+//        a live mutation that failed while offline never entered the queue
+//        (no code path called queueOfflineOperation after the failure),
+//        so an offline mutation was effectively lost until the tab was
+//        refreshed and a full app restart re-dispatched it -- which the
+//        store does not do. The end-to-end offline test exposed this:
+//        PENDING_KEY was empty after an offline add. v1.8 restores the
+//        original ownership: the push handlers' catch blocks call
+//        queueOfflineOperation() and then return false, so a failure is
+//        persisted to PENDING_KEY from the moment it happens.
+//        processOfflineQueue is rewritten to abort on the first failure:
+//        when a push returns false the handler has already re-queued that
+//        item, so the flush loop stops immediately and leaves the rest of
+//        the queue in localStorage. The "drained" branch only runs when
+//        every item in the queue pushed cleanly. This closes both the
+//        durability bug (queue not wiped on a failed flush) and the
+//        write-back bug (queue never got the failed item in the first
+//        place). queueOfflineOperation therefore stays reachable from
+//        both the mutation listeners (via pushTask/pushList on failure)
+//        and the flush path.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -106,11 +129,11 @@
 //   "Sync: Pushing task" with the full payload, so a single console read
 //   shows exactly what the client attempted to insert.
 // - Boolean return contract on pushList / pushTask: true = the push landed,
-//   false = it failed (and did not re-queue). Callers use this to decide
-//   whether to keep an offline item. See v1.7 above.
-// - "Sync: Offline queue drained." / "Sync: N queue item(s) still failing.
-//   Kept." console lines in processOfflineQueue, so a drain attempt is
-//   visible in the log even when no failure occurred.
+//   false = it failed (and has already been re-queued by the handler's own
+//   catch block). See v1.8 above.
+// - "Sync: Offline queue drained." console line on a full successful drain,
+//   and "Sync: Flush aborted. <type> still failing." on the first failure.
+//   Both are new in v1.8.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -169,6 +192,21 @@
 //   push handlers now return a boolean (true = landed, false = didn't),
 //   and processOfflineQueue keeps the failed items in PENDING_KEY. The
 //   inner re-queue is removed so a failure is recorded exactly once.
+//   See v1.8 for the correction: the inner re-queue came back, and the
+//   flush loop now aborts on the first failure instead of writing a
+//   trimmed `failed` array over PENDING_KEY.
+// - An offline mutation was lost, not queued. The v1.7 split removed the
+//   queueOfflineOperation() call from both push handlers and left the
+//   re-queue responsibility on processOfflineQueue. But processOfflineQueue
+//   only runs on a flush attempt (sign-in or explicit call), not on a
+//   live mutation, so a mutation that failed while offline never entered
+//   PENDING_KEY at all. The end-to-end offline test showed PENDING_KEY
+//   empty after an offline add. v1.8 restores the catch-block re-queue, so
+//   a failed live push is durably recorded the moment it happens; and
+//   processOfflineQueue is rewritten to abort on the first failure (the
+//   push handler has already re-queued that item), so the flush loop
+//   cannot overwrite or remove the rest of the queue after a partial
+//   success.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -291,7 +329,8 @@ async function pushList(operation, list) {
         }
         return true;
     } catch (err) {
-        console.warn(`Sync: Failed to push list ${operation}.`, err);
+        console.warn(`Sync: Failed to push list ${operation}. Queuing.`, err);
+        queueOfflineOperation(operation, 'list', list);
         return false;
     }
 }
@@ -321,7 +360,8 @@ async function pushTask(operation, task) {
         }
         return true;
     } catch (err) {
-        console.warn(`Sync: Failed to push task ${operation}.`, err);
+        console.warn(`Sync: Failed to push task ${operation}. Queuing.`, err);
+        queueOfflineOperation(operation, 'task', task);
         return false;
     }
 }
@@ -349,7 +389,6 @@ async function processOfflineQueue() {
     if (queue.length === 0) return;
     console.log(`Sync: Processing offline queue (${queue.length} items)...`);
 
-    let failed = [];
     for (const item of queue) {
         let ok = false;
         if (item.type === 'list') {
@@ -357,16 +396,18 @@ async function processOfflineQueue() {
         } else if (item.type === 'task') {
             ok = await pushTask(item.op, item.data);
         }
-        if (!ok) failed.push(item);
+        
+        // If a push fails, the push handler has already re-queued it.
+        // We stop here and leave the queue in localStorage as-is so we
+        // don't duplicate entries or wipe out the remaining items.
+        if (!ok) {
+            console.log(`Sync: Flush aborted. ${item.type} still failing.`);
+            return;
+        }
     }
 
-    if (failed.length > 0) {
-        console.log(`Sync: ${failed.length} queue item(s) still failing. Kept.`);
-        localStorage.setItem(PENDING_KEY, JSON.stringify(failed));
-    } else {
-        console.log(`Sync: Offline queue drained.`);
-        localStorage.removeItem(PENDING_KEY);
-    }
+    console.log(`Sync: Offline queue drained.`);
+    localStorage.removeItem(PENDING_KEY);
 }
 
 // Expose sync API globally
