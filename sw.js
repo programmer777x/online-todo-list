@@ -73,6 +73,25 @@
 //       was coupled to render.js load order. The 1.6 ui.js closes both
 //       failure modes; this bump is what makes it reach returning clients.
 //
+// 1.7 — Cache bump for the auth debug log. CACHE_NAME goes from
+//       todo-cache-v13 to todo-cache-v14 so returning clients fetch the
+//       updated js/ui.js whose password sign-in handler prints
+//       "Auth Debug - Sending to Supabase: { email, password }" right
+//       before the signInWithPassword call. That log is diagnostic, not
+//       permanent; it will be removed once the password flow is confirmed
+//       working end-to-end.
+//
+// 1.8 — Cache bump for the persistent-email modal. The version number
+//       jumps from todo-cache-v14 to todo-cache-v16 (v15 was skipped to
+//       avoid a version that ever shipped in a stale state). This is the
+//       bump that delivers three coordinated changes: index.html's new
+//       auth modal structure (email input hoisted above both steps), the
+//       js/render.js cache additions for the new ids, and the js/ui.js
+//       rewrite whose handlers drive the new structure and remove the
+//       v1.7 debug log. Without this bump, returning clients would keep
+//       the v14 cache and the modal would still hide the email input in
+//       the password step.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -123,10 +142,21 @@
 //   by id at function entry instead of reading them off render.js's top-level
 //   `const dom`. That removes the last cross-file coupling in the auth flow
 //   and the last silent failure mode it caused.
+// - Bumped CACHE_NAME from `todo-cache-v13` to `todo-cache-v14` so browsers fetch
+//   the debug-logged js/ui.js. The log is temporary diagnostic scaffolding;
+//   a future commit will remove it once the password sign-in path is confirmed
+//   working, and that commit will bump CACHE_NAME again.
+// - Bumped CACHE_NAME from `todo-cache-v14` to `todo-cache-v16` (skipping v15)
+//   to deliver the persistent-email auth modal: new index.html markup,
+//   the render.js cache additions for the new ids (authTitle, authSubtitle,
+//   authEmailHint, authEmailToggle), and the ui.js rewrite. The rewrite
+//   also removes the v1.7 debug log, so this bump simultaneously delivers
+//   the UX fix and the removal of the temporary password-printing
+//   diagnostic.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v13';
+const CACHE_NAME = 'todo-cache-v16';
 
 const ASSETS_TO_CACHE = [
   './',
