@@ -37,6 +37,16 @@
 //       per-call createClient() pattern let those events bypass the
 //       listener and let currentSession drift.
 //
+// 1.4 — Header update race fix. When the page loads with a session already
+//       in Supabase's storage, sync.js's initial getSession() and its
+//       immediate 'supabase-auth-changed' dispatch can both resolve before
+//       ui.js's init() has finished running cacheDom() and binding the
+//       listener. The header button then stayed on its default "Sign in to
+//       sync" label even though the user was signed in. wireAuthEvents()
+//       now reads window.sync.getSession() at the end and, if a session is
+//       already present, updates the button directly -- the listener path
+//       still handles every transition that happens after init.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -56,6 +66,9 @@
 //   instead" toggle link, send-link button (signInWithOtp), sign-in with
 //   password button (signInWithPassword), and the supabase-auth-changed
 //   listener. See the 1.3 revision entry.
+// - Initial-session check at the end of wireAuthEvents(): reads
+//   window.sync.getSession() and updates the header button when a session
+//   is already present on first load. See the 1.4 revision entry.
 //
 // ================================================================================================
 //
@@ -117,6 +130,13 @@
 //   the header button could lag behind the real session. All auth calls now use
 //   window.sync.getClient(), the single client whose onAuthStateChange is
 //   registered in sync.js -- events always reach that listener.
+// - Header button stayed on "Sign in to sync" after a page load with a session
+//   already stored. sync.js's initial getSession() and its immediate
+//   supabase-auth-changed dispatch could both fire before ui.js's init() had
+//   cached the DOM and attached the listener, so the event was lost. The fix
+//   is a direct read of window.sync.getSession() at the end of wireAuthEvents()
+//   that updates the button on first load; post-init transitions still flow
+//   through the listener.
 //
 // ================================================================================================
 
@@ -700,6 +720,13 @@ function wireAuthEvents() {
       dom.authButton.title = "Click to sign in";
     }
   });
+
+  // Check initial state in case sync.js finished before we attached the listener
+  const initialSession = window.sync.getSession();
+  if (initialSession) {
+    dom.authButton.textContent = initialSession.user.email.split('@')[0];
+    dom.authButton.title = "Click to sign out";
+  }
 }
 
 
