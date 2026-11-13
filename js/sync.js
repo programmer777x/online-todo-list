@@ -69,6 +69,19 @@
 //        handlers now log the exact payload they are about to send, so a
 //        console snapshot is enough to tell a column-name mismatch from a
 //        network failure.
+// v1.7 - Offline queue durability. pushList / pushTask used to catch their
+//        own errors, call queueOfflineOperation() internally, and return
+//        normally. processOfflineQueue then saw no failure, treated every
+//        item as succeeded, and either replaced PENDING_KEY with an empty
+//        `failed` array or removed it entirely. A flush attempted while
+//        still offline therefore wiped the whole queue. Both push handlers
+//        now return a boolean: true on a successful round-trip, false on
+//        any failure. The inner queueOfflineOperation() call is removed --
+//        re-queueing is owned exclusively by processOfflineQueue, so a
+//        failure is recorded exactly once and successful items are not
+//        re-queued after being drained. processOfflineQueue now checks the
+//        return value per item and keeps failing items in PENDING_KEY, so
+//        the queue survives a failed flush and drains on the next attempt.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -92,6 +105,12 @@
 // - Console logging in pushList / pushTask: prints "Sync: Pushing list" /
 //   "Sync: Pushing task" with the full payload, so a single console read
 //   shows exactly what the client attempted to insert.
+// - Boolean return contract on pushList / pushTask: true = the push landed,
+//   false = it failed (and did not re-queue). Callers use this to decide
+//   whether to keep an offline item. See v1.7 above.
+// - "Sync: Offline queue drained." / "Sync: N queue item(s) still failing.
+//   Kept." console lines in processOfflineQueue, so a drain attempt is
+//   visible in the log even when no failure occurred.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -141,6 +160,15 @@
 //   now log "Sync: Pushing list" / "Sync: Pushing task" with the full
 //   payload, so a single screenshot is enough to confirm whether the
 //   client sent the right columns and values.
+// - Offline queue drained to empty on a failed flush. The v1.6 pushList /
+//   pushTask catch blocks called queueOfflineOperation() and then returned
+//   normally; processOfflineQueue's own try/catch therefore saw no error,
+//   counted the item as succeeded, and either overwrote PENDING_KEY with
+//   an empty `failed` array or removed it entirely. Every queue item was
+//   lost on the first flush attempt if the network was still down. The
+//   push handlers now return a boolean (true = landed, false = didn't),
+//   and processOfflineQueue keeps the failed items in PENDING_KEY. The
+//   inner re-queue is removed so a failure is recorded exactly once.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -243,7 +271,7 @@ async function fetchRemoteState() {
 
 // --- Pushing Mutations ---
 async function pushList(operation, list) {
-    if (!currentSession) return;
+    if (!currentSession) return false;
     const userId = currentSession.user.id;
     
     try {
@@ -261,14 +289,15 @@ async function pushList(operation, list) {
             const { error } = await supabaseClient.from('lists').delete().eq('id', list.id).eq('user_id', userId);
             if (error) throw error;
         }
+        return true;
     } catch (err) {
-        console.warn(`Sync: Failed to push list ${operation}. Queuing.`, err);
-        queueOfflineOperation(operation, 'list', list);
+        console.warn(`Sync: Failed to push list ${operation}.`, err);
+        return false;
     }
 }
 
 async function pushTask(operation, task) {
-    if (!currentSession) return;
+    if (!currentSession) return false;
     const userId = currentSession.user.id;
     
     try {
@@ -290,9 +319,10 @@ async function pushTask(operation, task) {
             const { error } = await supabaseClient.from('tasks').delete().eq('id', task.id).eq('user_id', userId);
             if (error) throw error;
         }
+        return true;
     } catch (err) {
-        console.warn(`Sync: Failed to push task ${operation}. Queuing.`, err);
-        queueOfflineOperation(operation, 'task', task);
+        console.warn(`Sync: Failed to push task ${operation}.`, err);
+        return false;
     }
 }
 
@@ -321,21 +351,20 @@ async function processOfflineQueue() {
 
     let failed = [];
     for (const item of queue) {
-        try {
-            // We call the push function but pass a mock session/context so it doesn't re-queue infinitely
-            if (item.type === 'list') {
-                await pushList(item.op, item.data);
-            } else if (item.type === 'task') {
-                await pushTask(item.op, item.data);
-            }
-        } catch (err) {
-            failed.push(item);
+        let ok = false;
+        if (item.type === 'list') {
+            ok = await pushList(item.op, item.data);
+        } else if (item.type === 'task') {
+            ok = await pushTask(item.op, item.data);
         }
+        if (!ok) failed.push(item);
     }
 
     if (failed.length > 0) {
+        console.log(`Sync: ${failed.length} queue item(s) still failing. Kept.`);
         localStorage.setItem(PENDING_KEY, JSON.stringify(failed));
     } else {
+        console.log(`Sync: Offline queue drained.`);
         localStorage.removeItem(PENDING_KEY);
     }
 }
