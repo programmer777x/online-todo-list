@@ -63,6 +63,16 @@
 //       is what actually forces the client to pick up the current file.
 //       The ui.js guard is the belt-and-braces.
 //
+// 1.6 — Cache bump for the self-contained auth cache. CACHE_NAME goes
+//       from todo-cache-v12 to todo-cache-v13 so returning clients fetch
+//       the updated js/ui.js whose wireAuthEvents() now owns its own DOM
+//       lookups instead of reading off render.js's top-level `const dom`
+//       object. `dom` is not on `window`, so any diagnostic that tried
+//       `window.dom.authPasswordInput` saw `undefined` even when the
+//       cache was populated -- and any auth code that relied on `dom.auth*`
+//       was coupled to render.js load order. The 1.6 ui.js closes both
+//       failure modes; this bump is what makes it reach returning clients.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -108,10 +118,15 @@
 //   on the v11 cache and the stale render.js would keep returning `undefined`
 //   for dom.authPasswordInput -- the exact failure that made the password
 //   sign-in handler throw silently on click.
+// - Bumped CACHE_NAME from `todo-cache-v12` to `todo-cache-v13` so browsers fetch
+//   the self-contained js/ui.js whose wireAuthEvents() looks up auth elements
+//   by id at function entry instead of reading them off render.js's top-level
+//   `const dom`. That removes the last cross-file coupling in the auth flow
+//   and the last silent failure mode it caused.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v12';
+const CACHE_NAME = 'todo-cache-v13';
 
 const ASSETS_TO_CACHE = [
   './',
