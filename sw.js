@@ -92,6 +92,16 @@
 //       the v14 cache and the modal would still hide the email input in
 //       the password step.
 //
+// 1.9 — Cache bump for the offline-queue durability fix. CACHE_NAME goes
+//       from todo-cache-v16 to todo-cache-v17 so returning clients fetch
+//       the updated js/sync.js whose pushList / pushTask return a boolean
+//       and no longer re-queue internally, and whose processOfflineQueue
+//       keeps failed items instead of silently clearing the queue on a
+//       network failure. Without this bump, returning users would keep
+//       the v16 sync.js whose queue drains to empty on the first flush
+//       attempt even when every push failed — the "offline test passes"
+//       failure mode.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -153,10 +163,25 @@
 //   also removes the v1.7 debug log, so this bump simultaneously delivers
 //   the UX fix and the removal of the temporary password-printing
 //   diagnostic.
+// - Offline queue drained to empty on a failed flush. The v1.6 pushList /
+//   pushTask catch blocks called queueOfflineOperation() and then returned
+//   normally; processOfflineQueue's own try/catch therefore saw no error,
+//   counted the item as succeeded, and either overwrote PENDING_KEY with
+//   an empty `failed` array or removed it entirely. Every queue item was
+//   lost on the first flush attempt if the network was still down. The
+//   push handlers now return a boolean (true = landed, false = didn't),
+//   and processOfflineQueue keeps the failed items in PENDING_KEY. The
+//   inner re-queue is removed so a failure is recorded exactly once.
+// - Bumped CACHE_NAME from `todo-cache-v16` to `todo-cache-v17` so browsers
+//   fetch the offline-queue durability fix in js/sync.js. Without the bump,
+//   returning clients would keep running the v16 pushList/pushTask (which
+//   swallow errors and re-queue internally) and the v16 processOfflineQueue
+//   (which cannot see those failures and always clears the queue on a
+//   completed flush attempt).
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v16';
+const CACHE_NAME = 'todo-cache-v17';
 
 const ASSETS_TO_CACHE = [
   './',
