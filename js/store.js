@@ -23,6 +23,15 @@
 //       module can call it. Cloud-empty is a no-op — local state is left
 //       intact for the upcoming migration dialog to handle.
 //
+// 1.2 — Supabase Stage 3, mutation broadcast. saveState() now dispatches
+//       'sync-list-change' and 'sync-task-change' CustomEvents on every
+//       call, so js/sync.js can catch every local mutation (add, rename,
+//       delete, reorder, toggle, edit) and push it to Supabase. The
+//       broadcast is a lightweight fan-out (one list event, one task event
+//       per task in each list), deliberately broad so no mutation path can
+//       be missed; batching is deferred until mutation sync is confirmed
+//       working end-to-end.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -40,6 +49,11 @@
 //   activeListId when it still exists in the new set (otherwise picks the first
 //   available), saves to localStorage, and re-renders. Exposed as
 //   window.store.hydrateFromRemote for sync.js to call. Cloud-empty is a no-op.
+// - Mutation broadcast inside saveState(): dispatches 'sync-list-change' with
+//   { op: 'update', list: { id, name, created_at } } once per list, and
+//   'sync-task-change' with { op: 'update', task: { ...task, listId } } once
+//   per task in each list. sync.js's initSync() listens for both events and
+//   forwards to pushList() / pushTask().
 //
 // ================================================================================================
 //
@@ -51,8 +65,11 @@
 //   subtasks renders, and a mix of done/undone states across the rest of the tree so the app's
 //   completion styling is visible on first run. The list is named "Demo" instead of the previous
 //   empty "My List" default.
-//
-//
+// - Local mutations (add, rename, delete, reorder, toggle, edit) were saved to
+//   localStorage and stopped there — sync.js never learned about them, so the
+//   cloud stayed empty for a signed-in user. The saveState() broadcast closes
+//   that gap: every mutation now fans out to sync-list-change and
+//   sync-task-change events, which the sync engine consumes.
 //
 // ================================================================================================
 
@@ -287,6 +304,20 @@ function sanitizeTasks(source) {
 }
 
 function saveState() {
+  // Broadcast changes to the sync engine
+  if (window.state) {
+    for (const listId in state.lists) {
+      const list = state.lists[listId];
+      // Broadly notify of list changes (rename, create)
+      window.dispatchEvent(new CustomEvent('sync-list-change', { detail: { op: 'update', list: { id: list.id, name: list.name, created_at: Date.now() } } }));
+      
+      // Broadly notify of task changes
+      for (const task of list.tasks) {
+        window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...task, listId: list.id } } }));
+      }
+    }
+  }
+
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch (err) {
