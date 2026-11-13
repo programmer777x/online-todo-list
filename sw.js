@@ -52,6 +52,17 @@
 //       keep the v10 cache and the migration would keep silently skipping
 //       because that version tests `window.state` directly.
 //
+// 1.5 — Cache bump for the password-input guard. CACHE_NAME goes from
+//       todo-cache-v11 to todo-cache-v12 so returning clients fetch the
+//       updated js/ui.js (password sign-in handler now checks
+//       dom.authPasswordInput and logs a specific error instead of
+//       throwing silently) and the current js/render.js (whose cacheDom()
+//       does populate dom.authPasswordInput). The reason the password
+//       sign-in was silently failing was a stale render.js served from
+//       the v11 cache, where the reference was missing; bumping to v12
+//       is what actually forces the client to pick up the current file.
+//       The ui.js guard is the belt-and-braces.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -91,10 +102,16 @@
 //   returning clients would keep running the v10 sync.js whose migration
 //   branch is gated on `window.state` (always undefined here) and would
 //   never migrate.
+// - Bumped CACHE_NAME from `todo-cache-v11` to `todo-cache-v12` so browsers fetch
+//   the current js/render.js (whose cacheDom() populates dom.authPasswordInput)
+//   and the guarded js/ui.js. Without this bump, returning clients would stay
+//   on the v11 cache and the stale render.js would keep returning `undefined`
+//   for dom.authPasswordInput -- the exact failure that made the password
+//   sign-in handler throw silently on click.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v11';
+const CACHE_NAME = 'todo-cache-v12';
 
 const ASSETS_TO_CACHE = [
   './',
