@@ -58,6 +58,21 @@
 //       a future version of this failure is one console line away from
 //       diagnosis.
 //
+// 1.6 — Self-contained auth DOM cache. wireAuthEvents() now looks up every
+//       auth element by id at the top of the function, instead of reading
+//       them off render.js's `dom` object. `dom` is declared with a
+//       top-level `const` in render.js, which does NOT attach to `window`
+//       in a plain-script context -- so any diagnostic that reads
+//       `window.dom.authPasswordInput` returns undefined even when the
+//       cache is populated, and any code path that assumes `dom.auth*`
+//       will be set can be silently broken by load order or by a stale
+//       render.js from the service-worker cache. Local lookups inside
+//       wireAuthEvents() close both of those failure modes at once: the
+//       handler owns its own references, and it refuses to bind anything
+//       if the modal markup is missing. render.js's cacheDom() still
+//       populates the shared `dom` object for the rest of the app, and
+//       nothing outside this function reads `dom.auth*` anymore.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -84,6 +99,11 @@
 //   handler: logs a specific error and returns early if
 //   dom.authPasswordInput is missing, instead of letting the handler throw
 //   silently. See the 1.5 revision entry.
+// - Local DOM lookups at the top of wireAuthEvents(): every auth element
+//   referenced by the handler is looked up by id inside the function, not
+//   read off render.js's `dom` cache. A missing modal or header button
+//   short-circuits the whole function with a return instead of binding
+//   listeners to null. See the 1.6 revision entry.
 //
 // ================================================================================================
 //
@@ -157,6 +177,13 @@
 //   service-worker cache). The handler now checks the reference first and
 //   logs "Auth Error: password input not found in DOM cache." so a future
 //   version of this failure is diagnosed in one console line.
+// - Auth DOM references lived in render.js's `dom` cache, which is a top-level
+//   `const` and therefore not visible on `window`. Any auth code that read
+//   `dom.auth*` was implicitly coupled to load order between render.js and
+//   ui.js, and any console diagnostic that tried `window.dom.auth*` saw
+//   `undefined` even when the cache was populated. wireAuthEvents() now
+//   looks up its own elements by id at the top of the function and bails out
+//   cleanly if the modal markup is missing -- the handler owns what it binds.
 //
 // ================================================================================================
 
@@ -644,45 +671,63 @@ function wireEvents() {
    ================================================================================================ */
 
 function wireAuthEvents() {
+  // Safely cache auth elements here to ensure they are bound
+  const btn = document.getElementById('auth-button');
+  const modal = document.getElementById('auth-modal');
+  const closeBtn = document.getElementById('auth-close');
+  const stepEmail = document.getElementById('auth-step-email');
+  const stepPassword = document.getElementById('auth-step-password');
+  const emailInput = document.getElementById('auth-email');
+  const passwordInput = document.getElementById('auth-password');
+  const sendEmailBtn = document.getElementById('auth-send-email');
+  const signInPasswordBtn = document.getElementById('auth-signin-password');
+  const errEmail = document.getElementById('auth-error-email');
+  const errPassword = document.getElementById('auth-error-password');
+  const toggleLink = document.getElementById('auth-password-toggle');
+  const sentMsg = document.getElementById('auth-sent-msg');
+
+  if (!btn || !modal) return; // Prevent errors if markup is missing
+
   // Open modal / Sign out
-  dom.authButton.addEventListener('click', async () => {
-    const session = window.sync.getSession();
+  btn.addEventListener('click', async () => {
+    const session = window.sync ? window.sync.getSession() : null;
     if (session) {
       if (window.confirm('Sign out? Local data will remain on this device.')) {
         await window.sync.getClient().auth.signOut();
       }
     } else {
-      dom.authStepEmail.hidden = false;
-      dom.authStepPassword.hidden = true;
-      dom.authErrorEmail.textContent = '';
-      dom.authErrorPassword.textContent = '';
-      dom.authSentMsg.hidden = true;
-      dom.authSendEmailBtn.hidden = false;
-      dom.authEmailInput.value = '';
-      dom.authPasswordInput.value = '';
-      dom.authModal.showModal();
+      stepEmail.hidden = false;
+      stepPassword.hidden = true;
+      errEmail.textContent = '';
+      errPassword.textContent = '';
+      sentMsg.hidden = true;
+      sendEmailBtn.hidden = false;
+      toggleLink.parentElement.hidden = false;
+      emailInput.value = '';
+      passwordInput.value = '';
+      modal.showModal();
     }
   });
 
   // Close modal
-  dom.authClose.addEventListener('click', () => dom.authModal.close());
+  closeBtn.addEventListener('click', () => modal.close());
 
   // Toggle Password Step
-  dom.authPasswordToggle.addEventListener('click', (e) => {
+  toggleLink.addEventListener('click', (e) => {
     e.preventDefault();
-    dom.authStepEmail.hidden = true;
-    dom.authStepPassword.hidden = false;
-    dom.authPasswordInput.focus();
+    stepEmail.hidden = true;
+    stepPassword.hidden = false;
+    passwordInput.focus();
   });
 
   // Send Email Link
-  dom.authSendEmailBtn.addEventListener('click', async () => {
-    const email = dom.authEmailInput.value.trim();
+  sendEmailBtn.addEventListener('click', async () => {
+    const email = emailInput.value.trim();
     if (!email) return;
     
-    dom.authSendEmailBtn.textContent = 'Sending...';
-    dom.authSendEmailBtn.disabled = true;
-    dom.authErrorEmail.textContent = '';
+    sendEmailBtn.textContent = 'Sending...';
+    sendEmailBtn.disabled = true;
+    errEmail.textContent = '';
 
     const { error } = await window.sync.getClient().auth.signInWithOtp({
       email: email,
@@ -692,44 +737,40 @@ function wireAuthEvents() {
       }
     });
 
-    dom.authSendEmailBtn.textContent = 'Send sign-in link';
-    dom.authSendEmailBtn.disabled = false;
+    sendEmailBtn.textContent = 'Send sign-in link';
+    sendEmailBtn.disabled = false;
 
     if (error) {
-      dom.authErrorEmail.textContent = error.message;
+      errEmail.textContent = error.message;
     } else {
-      dom.authSendEmailBtn.hidden = true;
-      dom.authSentMsg.hidden = false;
-      dom.authPasswordToggle.parentElement.hidden = true;
+      sendEmailBtn.hidden = true;
+      sentMsg.hidden = false;
+      toggleLink.parentElement.hidden = true;
     }
   });
 
   // Sign in with Password
-  dom.authSignInPasswordBtn.addEventListener('click', async () => {
-    if (!dom.authPasswordInput) {
-      console.error('Auth Error: password input not found in DOM cache.');
-      return;
-    }
-    const email = dom.authEmailInput.value.trim();
-    const password = dom.authPasswordInput.value;
+  signInPasswordBtn.addEventListener('click', async () => {
+    const email = emailInput.value.trim();
+    const password = passwordInput.value;
     if (!email || !password) return;
 
-    dom.authSignInPasswordBtn.textContent = 'Signing in...';
-    dom.authSignInPasswordBtn.disabled = true;
-    dom.authErrorPassword.textContent = '';
+    signInPasswordBtn.textContent = 'Signing in...';
+    signInPasswordBtn.disabled = true;
+    errPassword.textContent = '';
 
     const { data, error } = await window.sync.getClient().auth.signInWithPassword({
       email: email,
       password: password
     });
 
-    dom.authSignInPasswordBtn.textContent = 'Sign in';
-    dom.authSignInPasswordBtn.disabled = false;
+    signInPasswordBtn.textContent = 'Sign in';
+    signInPasswordBtn.disabled = false;
 
     if (error) {
-      dom.authErrorPassword.textContent = error.message;
+      errPassword.textContent = error.message;
     } else {
-      dom.authModal.close();
+      modal.close();
     }
   });
 
@@ -737,19 +778,19 @@ function wireAuthEvents() {
   window.addEventListener('supabase-auth-changed', (e) => {
     const session = e.detail.session;
     if (session) {
-      dom.authButton.textContent = session.user.email.split('@')[0];
-      dom.authButton.title = "Click to sign out";
+      btn.textContent = session.user.email.split('@')[0];
+      btn.title = "Click to sign out";
     } else {
-      dom.authButton.textContent = 'Sign in to sync';
-      dom.authButton.title = "Click to sign in";
+      btn.textContent = 'Sign in to sync';
+      btn.title = "Click to sign in";
     }
   });
 
   // Check initial state in case sync.js finished before we attached the listener
-  const initialSession = window.sync.getSession();
+  const initialSession = window.sync ? window.sync.getSession() : null;
   if (initialSession) {
-    dom.authButton.textContent = initialSession.user.email.split('@')[0];
-    dom.authButton.title = "Click to sign out";
+    btn.textContent = initialSession.user.email.split('@')[0];
+    btn.title = "Click to sign out";
   }
 }
 
