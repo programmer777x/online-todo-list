@@ -47,6 +47,17 @@
 //       already present, updates the button directly -- the listener path
 //       still handles every transition that happens after init.
 //
+// 1.5 — Password input guard. The password sign-in handler used to read
+//       dom.authPasswordInput.value without checking the reference exists.
+//       If cacheDom() ever fails to populate that reference (a stale
+//       render.js served from a service-worker cache, a rename during a
+//       refactor, a typo in the id), the handler would throw a TypeError
+//       in the background and the button would appear dead -- no error,
+//       no visible response. The handler now checks the reference first
+//       and logs "Auth Error: password input not found in DOM cache." so
+//       a future version of this failure is one console line away from
+//       diagnosis.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -69,6 +80,10 @@
 // - Initial-session check at the end of wireAuthEvents(): reads
 //   window.sync.getSession() and updates the header button when a session
 //   is already present on first load. See the 1.4 revision entry.
+// - Password-input presence guard at the top of the password sign-in
+//   handler: logs a specific error and returns early if
+//   dom.authPasswordInput is missing, instead of letting the handler throw
+//   silently. See the 1.5 revision entry.
 //
 // ================================================================================================
 //
@@ -137,6 +152,11 @@
 //   is a direct read of window.sync.getSession() at the end of wireAuthEvents()
 //   that updates the button on first load; post-init transitions still flow
 //   through the listener.
+// - Password sign-in handler would throw silently if dom.authPasswordInput
+//   was missing (typically because a stale render.js was served from the
+//   service-worker cache). The handler now checks the reference first and
+//   logs "Auth Error: password input not found in DOM cache." so a future
+//   version of this failure is diagnosed in one console line.
 //
 // ================================================================================================
 
@@ -686,6 +706,10 @@ function wireAuthEvents() {
 
   // Sign in with Password
   dom.authSignInPasswordBtn.addEventListener('click', async () => {
+    if (!dom.authPasswordInput) {
+      console.error('Auth Error: password input not found in DOM cache.');
+      return;
+    }
     const email = dom.authEmailInput.value.trim();
     const password = dom.authPasswordInput.value;
     if (!email || !password) return;
