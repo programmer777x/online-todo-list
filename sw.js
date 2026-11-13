@@ -34,6 +34,15 @@
 //       users because the old cached store.js has no broadcast and the
 //       old cached sync.js has no listener.
 //
+// 1.3 — Cache bump for the precise-sync fix. CACHE_NAME goes from
+//       todo-cache-v9 to todo-cache-v10 so returning clients fetch the
+//       updated js/store.js (broadcast moved from saveState()'s broad loop
+//       into each mutation function) and js/sync.js (pushList/pushTask
+//       rebuilt to accept the precise insert / update / delete payloads).
+//       Without this bump, returning users would stay on the v9 cache
+//       whose store.js still fired the broad loop on every save and kept
+//       hammering Supabase with hundreds of upserts per drag or keystroke.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -61,10 +70,15 @@
 //   returning clients would keep the pre-hooks store.js (no broadcast) and
 //   sync.js (no listeners, no auto-migration), and local changes would never
 //   reach Supabase on those devices.
+// - Bumped CACHE_NAME from `todo-cache-v9` to `todo-cache-v10` so browsers fetch
+//   the precise-mutation fix in js/store.js and the precise-payload
+//   pushList/pushTask in js/sync.js. Without the bump, returning clients
+//   would keep the broad-loop store.js from v9 and continue to hammer
+//   Supabase with hundreds of upserts per drag or keystroke.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v9';
+const CACHE_NAME = 'todo-cache-v10';
 
 const ASSETS_TO_CACHE = [
   './',
