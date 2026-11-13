@@ -40,6 +40,18 @@
 //        returns without calling hydrate (there is nothing to hydrate from).
 //        Without these two changes, local changes never reached Supabase
 //        and a fresh sign-in with local data showed an empty cloud forever.
+// v1.5 - Precise payloads. store.js no longer broadcasts whole-state on
+//        every save; it dispatches one targeted event per mutation
+//        (insert/update/delete with just the affected item). pushList /
+//        pushTask are rewritten to accept that shape directly:
+//          - insert / update: build the DB row explicitly from the fields
+//            the caller sent (never spread the raw object, which could
+//            carry local-only keys), and upsert.
+//          - delete: the caller sends only { id }, so the handler uses
+//            that id directly in the .delete().eq('id', ...) chain.
+//        This pairs with store.js v1.3 to keep a single user action at a
+//        single Supabase request (reorder still fans out per sibling by
+//        design; see store.js v1.3 FIXES).
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -85,6 +97,11 @@
 //   local data never migrated. The 'sync-task-change' / 'sync-list-change'
 //   listeners plus the auto-migration branch in fetchRemoteState() close
 //   both gaps.
+// - The 1.4 wiring paired with store.js's old broad broadcast, which looped
+//   every list and every task on every save and produced hundreds of
+//   redundant Supabase upserts per drag or keystroke. store.js v1.3 dispatches
+//   only the specific changed item, and the two push handlers here now
+//   consume that precise shape directly. One action -> one request.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -186,11 +203,15 @@ async function fetchRemoteState() {
 async function pushList(operation, list) {
     if (!currentSession) return;
     const userId = currentSession.user.id;
-    const payload = { ...list, user_id: userId };
-    delete payload.tasks; // Ensure we don't try to cascade insert tasks here
-
+    
     try {
         if (operation === 'insert' || operation === 'update') {
+            const payload = { 
+                id: list.id, 
+                user_id: userId, 
+                name: list.name, 
+                created_at: list.created_at || Date.now() 
+            };
             const { error } = await supabaseClient.from('lists').upsert(payload);
             if (error) throw error;
         } else if (operation === 'delete') {
@@ -207,20 +228,18 @@ async function pushTask(operation, task) {
     if (!currentSession) return;
     const userId = currentSession.user.id;
     
-    // Convert camelCase local shape to snake_case DB shape if necessary
-    const payload = {
-        id: task.id,
-        user_id: userId,
-        list_id: task.listId || task.list_id, // Handle both shapes during transition
-        text: task.text,
-        done: task.done,
-        section: task.section,
-        parent_id: task.parentId || task.parent_id || null,
-        created_at: task.createdAt || task.created_at || Date.now()
-    };
-
     try {
         if (operation === 'insert' || operation === 'update') {
+            const payload = {
+                id: task.id,
+                user_id: userId,
+                list_id: task.listId || task.list_id,
+                text: task.text,
+                done: task.done,
+                section: task.section,
+                parent_id: task.parentId || task.parent_id || null,
+                created_at: task.createdAt || task.created_at || Date.now()
+            };
             const { error } = await supabaseClient.from('tasks').upsert(payload);
             if (error) throw error;
         } else if (operation === 'delete') {
