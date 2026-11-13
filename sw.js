@@ -14,7 +14,15 @@
 //
 // === REVISIONS ===
 //
-//
+// 1.1 — Cache bump for the header-init fix. CACHE_NAME goes from todo-cache-v6
+//       to todo-cache-v8 so returning clients fetch the updated js/ui.js
+//       (which now reads window.sync.getSession() at the end of
+//       wireAuthEvents() to fix the header button staying on "Sign in to
+//       sync" when the initial supabase-auth-changed event fired before
+//       the UI attached its listener) and the updated js/sync.js (which
+//       exposes window.sync.getClient()). Without this bump, the old
+//       cached ui.js / sync.js would keep serving and the fix would not
+//       reach returning users.
 //
 // ================================================================================================
 //
@@ -35,12 +43,13 @@
 // - Corrected the maskable icon filename in ASSETS_TO_CACHE from `./icons/icon-maskable-512.png`
 //   to `./icons/icon-maskable-512.png`, matching the actual file on disk. The old path caused
 //   `cache.addAll()` to reject during install, which silently aborted the precache step.
-//
-//
+// - Bumped CACHE_NAME from `todo-cache-v6` to `todo-cache-v8` so browsers fetch
+//   the header-init fix in js/ui.js and the getClient() export in js/sync.js
+//   instead of continuing to serve the pre-fix versions from the old cache.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v6';
+const CACHE_NAME = 'todo-cache-v8';
 
 const ASSETS_TO_CACHE = [
   './',
