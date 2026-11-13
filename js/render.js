@@ -38,6 +38,14 @@
 //       the sent-email success message. ui.js's rewritten wireAuthEvents()
 //       reads this new set.
 //
+// 1.3 — Confirm the password input reference. dom.authPasswordInput is
+//       present in cacheDom() alongside the rest of the auth set (it was
+//       added in 1.2). If the password sign-in button's click handler was
+//       failing with `dom.authPasswordInput` undefined, the cause is a
+//       stale cache serving the pre-1.2 render.js, not a missing line in
+//       this file -- a service-worker bump is what makes the current
+//       render.js reach returning clients.
+//
 // ================================================================================================
 //
 // === ADDED ===
