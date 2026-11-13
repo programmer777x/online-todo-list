@@ -83,6 +83,25 @@
 //       both visible in one line at click time and is intended to be
 //       removed once the flow is confirmed working.
 //
+// 1.8 — Persistent-email modal. The email input, title, subtitle, and hint
+//       paragraph are now direct children of .auth-modal-content and stay
+//       visible in both the link and password flows. wireAuthEvents() is
+//       rewritten for that structure: clicking "Use password instead"
+//       rewrites the title/subtitle text, hides the hint, swaps the step
+//       containers, and disables the email input so it can't be changed
+//       mid-flow; the new "Use link instead" link reverses all of that.
+//       The handlers are back on `dom.*` lookups (render.js v1.4 caches
+//       the new ids); the local-cache arrangement from 1.6 is dropped
+//       because the structure change made a full rewrite cleaner than a
+//       partial patch, and render.js and ui.js now ship the same set of
+//       ids. The 1.7 debug log is removed -- its diagnostic purpose is
+//       fulfilled and it should not print plaintext passwords in a modal
+//       that now has a real "change email / password" flow. Input
+//       validation is added on both paths: an empty email blocks the
+//       Send-link click, and an empty email or password blocks the Sign-in
+//       click, each with a specific error message rendered in the
+//       corresponding .auth-error paragraph.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -116,6 +135,14 @@
 //   listeners to null. See the 1.6 revision entry.
 // - Debug console.log in the password sign-in handler printing the exact
 //   { email, password } sent to Supabase. See the 1.7 revision entry.
+//   Removed in 1.8.
+// - "Use link instead" handler on dom.authEmailToggle: swaps back to the
+//   link step, re-enables the email input, and focuses it. See the 1.8
+//   revision entry.
+// - Input validation on both submit paths: an empty email blocks the
+//   send-link click with a specific message; an empty email or password
+//   blocks the password sign-in click with a specific message. See the
+//   1.8 revision entry.
 //
 // ================================================================================================
 //
@@ -196,6 +223,16 @@
 //   `undefined` even when the cache was populated. wireAuthEvents() now
 //   looks up its own elements by id at the top of the function and bails out
 //   cleanly if the modal markup is missing -- the handler owns what it binds.
+//   Superseded in 1.8 by the persistent-email structure: the auth flow now
+//   reads dom.auth* again because render.js and ui.js ship the same set of
+//   ids in the same round, so cross-file coupling is no longer a live risk.
+// - Password sign-in reads the email from the email input, but the email
+//   input used to live in the previous step, so a user who toggled to
+//   password before typing an email got a confusing silent failure. The
+//   persistent-email layout puts the email input outside either step so it
+//   is always visible, disables it when switching to password so it can't
+//   change mid-flow, and adds specific validation messages for the two
+//   empty-field cases. See the 1.8 revision entry.
 //
 // ================================================================================================
 
@@ -686,18 +723,7 @@ function wireAuthEvents() {
   // Safely cache auth elements here to ensure they are bound
   const btn = document.getElementById('auth-button');
   const modal = document.getElementById('auth-modal');
-  const closeBtn = document.getElementById('auth-close');
-  const stepEmail = document.getElementById('auth-step-email');
-  const stepPassword = document.getElementById('auth-step-password');
-  const emailInput = document.getElementById('auth-email');
-  const passwordInput = document.getElementById('auth-password');
-  const sendEmailBtn = document.getElementById('auth-send-email');
-  const signInPasswordBtn = document.getElementById('auth-signin-password');
-  const errEmail = document.getElementById('auth-error-email');
-  const errPassword = document.getElementById('auth-error-password');
-  const toggleLink = document.getElementById('auth-password-toggle');
-  const sentMsg = document.getElementById('auth-sent-msg');
-
+  
   if (!btn || !modal) return; // Prevent errors if markup is missing
 
   // Open modal / Sign out
@@ -708,38 +734,67 @@ function wireAuthEvents() {
         await window.sync.getClient().auth.signOut();
       }
     } else {
-      stepEmail.hidden = false;
-      stepPassword.hidden = true;
-      errEmail.textContent = '';
-      errPassword.textContent = '';
-      sentMsg.hidden = true;
-      sendEmailBtn.hidden = false;
-      toggleLink.parentElement.hidden = false;
-      emailInput.value = '';
-      passwordInput.value = '';
+      // Reset to Link step
+      dom.authTitle.textContent = 'Sign in to sync';
+      dom.authSubtitle.textContent = 'Enter your email and we\'ll send you a sign-in link.';
+      dom.authEmailHint.hidden = false;
+      dom.authStepEmail.hidden = false;
+      dom.authStepPassword.hidden = true;
+      
+      dom.authErrorEmail.textContent = '';
+      dom.authErrorPassword.textContent = '';
+      dom.authSentMsg.hidden = true;
+      dom.authSendEmailBtn.hidden = false;
+      dom.authEmailInput.value = '';
+      dom.authPasswordInput.value = '';
+      dom.authEmailInput.disabled = false;
+      
       modal.showModal();
     }
   });
 
   // Close modal
-  closeBtn.addEventListener('click', () => modal.close());
+  dom.authClose.addEventListener('click', () => modal.close());
 
-  // Toggle Password Step
-  toggleLink.addEventListener('click', (e) => {
+  // Toggle to Password Step
+  dom.authPasswordToggle.addEventListener('click', (e) => {
     e.preventDefault();
-    stepEmail.hidden = true;
-    stepPassword.hidden = false;
-    passwordInput.focus();
+    dom.authTitle.textContent = 'Sign in with password';
+    dom.authSubtitle.textContent = 'Enter the password for your account.';
+    dom.authEmailHint.hidden = true;
+    dom.authStepEmail.hidden = true;
+    dom.authStepPassword.hidden = false;
+    
+    // Lock the email so they don't accidentally change it here
+    dom.authEmailInput.disabled = true; 
+    dom.authPasswordInput.focus();
+  });
+
+  // Toggle back to Link Step
+  dom.authEmailToggle.addEventListener('click', (e) => {
+    e.preventDefault();
+    dom.authTitle.textContent = 'Sign in to sync';
+    dom.authSubtitle.textContent = 'Enter your email and we\'ll send you a sign-in link.';
+    dom.authEmailHint.hidden = false;
+    dom.authStepEmail.hidden = false;
+    dom.authStepPassword.hidden = true;
+    
+    dom.authEmailInput.disabled = false;
+    dom.authEmailInput.focus();
   });
 
   // Send Email Link
-  sendEmailBtn.addEventListener('click', async () => {
-    const email = emailInput.value.trim();
-    if (!email) return;
+  dom.authSendEmailBtn.addEventListener('click', async () => {
+    const email = dom.authEmailInput.value.trim();
+    dom.authErrorEmail.textContent = '';
     
-    sendEmailBtn.textContent = 'Sending...';
-    sendEmailBtn.disabled = true;
-    errEmail.textContent = '';
+    if (!email) {
+      dom.authErrorEmail.textContent = 'Please enter your email address.';
+      return;
+    }
+    
+    dom.authSendEmailBtn.textContent = 'Sending...';
+    dom.authSendEmailBtn.disabled = true;
 
     const { error } = await window.sync.getClient().auth.signInWithOtp({
       email: email,
@@ -749,40 +804,47 @@ function wireAuthEvents() {
       }
     });
 
-    sendEmailBtn.textContent = 'Send sign-in link';
-    sendEmailBtn.disabled = false;
+    dom.authSendEmailBtn.textContent = 'Send sign-in link';
+    dom.authSendEmailBtn.disabled = false;
 
     if (error) {
-      errEmail.textContent = error.message;
+      dom.authErrorEmail.textContent = error.message;
     } else {
-      sendEmailBtn.hidden = true;
-      sentMsg.hidden = false;
-      toggleLink.parentElement.hidden = true;
+      dom.authSendEmailBtn.hidden = true;
+      dom.authSentMsg.hidden = false;
+      dom.authPasswordToggle.parentElement.hidden = true;
     }
   });
 
   // Sign in with Password
-  signInPasswordBtn.addEventListener('click', async () => {
-    const email = emailInput.value.trim();
-    const password = passwordInput.value;
-    if (!email || !password) return;
+  dom.authSignInPasswordBtn.addEventListener('click', async () => {
+    const email = dom.authEmailInput.value.trim();
+    const password = dom.authPasswordInput.value;
+    
+    dom.authErrorPassword.textContent = '';
+    
+    if (!email) {
+      dom.authErrorPassword.textContent = 'Email is missing. Click "Use link instead" to add it.';
+      return;
+    }
+    if (!password) {
+      dom.authErrorPassword.textContent = 'Please enter your password.';
+      return;
+    }
 
-    signInPasswordBtn.textContent = 'Signing in...';
-    signInPasswordBtn.disabled = true;
-    errPassword.textContent = '';
-
-    console.log("Auth Debug - Sending to Supabase:", { email, password });
+    dom.authSignInPasswordBtn.textContent = 'Signing in...';
+    dom.authSignInPasswordBtn.disabled = true;
 
     const { data, error } = await window.sync.getClient().auth.signInWithPassword({
       email: email,
       password: password
     });
 
-    signInPasswordBtn.textContent = 'Sign in';
-    signInPasswordBtn.disabled = false;
+    dom.authSignInPasswordBtn.textContent = 'Sign in';
+    dom.authSignInPasswordBtn.disabled = false;
 
     if (error) {
-      errPassword.textContent = error.message;
+      dom.authErrorPassword.textContent = error.message;
     } else {
       modal.close();
     }
