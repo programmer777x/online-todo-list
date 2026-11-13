@@ -46,6 +46,15 @@
 //       this file -- a service-worker bump is what makes the current
 //       render.js reach returning clients.
 //
+// 1.4 — Persistent-email modal structure. The email input, title, subtitle,
+//       and hint paragraph are now direct children of .auth-modal-content
+//       and stay visible across both the link and password flows. cacheDom
+//       gains the four new ids that structure introduces: authTitle,
+//       authSubtitle, authEmailHint, authEmailToggle. dom.authPasswordToggle
+//       is retained for the existing "Use password instead" link (still in
+//       the markup, still referenced by ui.js). dom.authEmailToggle is the
+//       new "Use link instead" anchor inside the password step.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -62,6 +71,9 @@
 //   authClose, authStepEmail, authStepPassword, authEmailInput,
 //   authPasswordInput, authSendEmailBtn, authSignInPasswordBtn,
 //   authErrorEmail, authErrorPassword, authPasswordToggle, authSentMsg.
+// - Additional auth UI references for the persistent-email structure:
+//   authTitle, authSubtitle, authEmailHint, authEmailToggle. See the 1.4
+//   revision entry.
 //
 // ================================================================================================
 //
@@ -117,6 +129,9 @@ function cacheDom() {
   dom.authButton = document.getElementById('auth-button');
   dom.authModal = document.getElementById('auth-modal');
   dom.authClose = document.getElementById('auth-close');
+  dom.authTitle = document.getElementById('auth-title');
+  dom.authSubtitle = document.getElementById('auth-subtitle');
+  dom.authEmailHint = document.getElementById('auth-email-hint');
   dom.authStepEmail = document.getElementById('auth-step-email');
   dom.authStepPassword = document.getElementById('auth-step-password');
   dom.authEmailInput = document.getElementById('auth-email');
@@ -126,6 +141,7 @@ function cacheDom() {
   dom.authErrorEmail = document.getElementById('auth-error-email');
   dom.authErrorPassword = document.getElementById('auth-error-password');
   dom.authPasswordToggle = document.getElementById('auth-password-toggle');
+  dom.authEmailToggle = document.getElementById('auth-email-toggle');
   dom.authSentMsg = document.getElementById('auth-sent-msg');
 }
 
