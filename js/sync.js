@@ -31,6 +31,15 @@
 //        could drift and the header button could lag the real session.
 //        Routing all auth calls through this single client fixes that at
 //        the source and removes the duplicate-client pattern entirely.
+// v1.4 - Wire the local mutation hooks. initSync() now registers
+//        'sync-task-change' and 'sync-list-change' listeners (dispatched by
+//        store.js's saveState()); the handlers push the corresponding task
+//        or list to Supabase when a session is active. fetchRemoteState()
+//        now auto-migrates on first sign-in when the cloud is empty: every
+//        local list and task is pushed up, in order, before the function
+//        returns without calling hydrate (there is nothing to hydrate from).
+//        Without these two changes, local changes never reached Supabase
+//        and a fresh sign-in with local data showed an empty cloud forever.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -44,6 +53,13 @@
 // - window.sync.getClient() — accessor for the single initialized client
 //   instance, so ui.js (and any future UI code) can call .auth.* on the
 //   exact client whose onAuthStateChange is registered here.
+// - 'sync-task-change' / 'sync-list-change' listeners in initSync(), each
+//   forwarding the event's op + payload to pushTask() / pushList() when a
+//   session is active. See v1.4 above for the store.js side.
+// - Auto-migration branch in fetchRemoteState(): when the signed-in user
+//   has zero lists in the cloud AND local state has at least one list,
+//   upload every local list and its tasks, log "[Sync] Migration complete",
+//   and return without hydrating (the cloud was empty, so nothing to pull).
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -63,6 +79,12 @@
 //   listener, so currentSession could go stale and the header button could
 //   lag the real session. All auth calls now go through window.sync.getClient(),
 //   i.e. through the one client this file already manages.
+// - Local mutations never reached Supabase. store.js saved to localStorage
+//   and stopped; nothing told this module a change had happened, so the
+//   cloud tables stayed empty for a signed-in user and a fresh sign-in with
+//   local data never migrated. The 'sync-task-change' / 'sync-list-change'
+//   listeners plus the auto-migration branch in fetchRemoteState() close
+//   both gaps.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -99,6 +121,16 @@ async function initSync() {
         } else {
             console.log("Sync: User is signed out. Local only.");
         }
+
+        // Listen for local changes to push to Supabase
+        window.addEventListener('sync-task-change', async (e) => {
+            const { op, task } = e.detail;
+            if (currentSession) await pushTask(op, task);
+        });
+        window.addEventListener('sync-list-change', async (e) => {
+            const { op, list } = e.detail;
+            if (currentSession) await pushList(op, list);
+        });
     } catch (err) {
         console.warn("Sync: Failed to initialize.", err);
     }
@@ -127,8 +159,21 @@ async function fetchRemoteState() {
 
         if (tasksErr) throw tasksErr;
 
+        // Auto-migrate: If cloud is empty, upload local data
+        if (lists.length === 0 && window.state && Object.keys(window.state.lists).length > 0) {
+            console.log("Sync: Cloud is empty. Migrating local data...");
+            for (const listId in window.state.lists) {
+                const list = window.state.lists[listId];
+                await pushList('insert', list);
+                for (const task of list.tasks) {
+                    await pushTask('insert', { ...task, listId: list.id });
+                }
+            }
+            console.log("Sync: Migration complete.");
+            return;
+        }
+
         // Map remote data back to local state shape
-        // We need to coordinate this with store.js
         if (window.store && window.store.hydrateFromRemote) {
             window.store.hydrateFromRemote(lists, tasks);
         }
