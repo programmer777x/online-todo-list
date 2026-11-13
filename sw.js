@@ -43,6 +43,15 @@
 //       whose store.js still fired the broad loop on every save and kept
 //       hammering Supabase with hundreds of upserts per drag or keystroke.
 //
+// 1.4 — Cache bump for the payload/migration fix. CACHE_NAME goes from
+//       todo-cache-v10 to todo-cache-v11 so returning clients fetch the
+//       updated js/sync.js (migration branch reads a localState fallback
+//       instead of the always-undefined window.state, pushList always
+//       sends a real created_at, and both push handlers log the payload
+//       they attempt to insert). Without this bump, returning users would
+//       keep the v10 cache and the migration would keep silently skipping
+//       because that version tests `window.state` directly.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -75,10 +84,17 @@
 //   pushList/pushTask in js/sync.js. Without the bump, returning clients
 //   would keep the broad-loop store.js from v9 and continue to hammer
 //   Supabase with hundreds of upserts per drag or keystroke.
+// - Bumped CACHE_NAME from `todo-cache-v10` to `todo-cache-v11` so browsers fetch
+//   the v1.6 js/sync.js -- the migration branch that reads `typeof state !==
+//   'undefined' ? state : window.state`, the pushList `created_at` fallback,
+//   and the "Sync: Pushing list/task" payload logging. Without this bump,
+//   returning clients would keep running the v10 sync.js whose migration
+//   branch is gated on `window.state` (always undefined here) and would
+//   never migrate.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v10';
+const CACHE_NAME = 'todo-cache-v11';
 
 const ASSETS_TO_CACHE = [
   './',
