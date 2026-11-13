@@ -73,6 +73,16 @@
 //       populates the shared `dom` object for the rest of the app, and
 //       nothing outside this function reads `dom.auth*` anymore.
 //
+// 1.7 — Debug log for password sign-in. A single console.log right before
+//       signInWithPassword prints the exact { email, password } pair being
+//       sent to Supabase. The direct-API test from PowerShell proved the
+//       account and credentials work; if the frontend still fails with
+//       the same creds, the two plausible causes are an empty/wrong email
+//       (the password step reads from the email input that lives in the
+//       prior step) or an input-side whitespace/typo. This log makes
+//       both visible in one line at click time and is intended to be
+//       removed once the flow is confirmed working.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -104,6 +114,8 @@
 //   read off render.js's `dom` cache. A missing modal or header button
 //   short-circuits the whole function with a return instead of binding
 //   listeners to null. See the 1.6 revision entry.
+// - Debug console.log in the password sign-in handler printing the exact
+//   { email, password } sent to Supabase. See the 1.7 revision entry.
 //
 // ================================================================================================
 //
@@ -758,6 +770,8 @@ function wireAuthEvents() {
     signInPasswordBtn.textContent = 'Signing in...';
     signInPasswordBtn.disabled = true;
     errPassword.textContent = '';
+
+    console.log("Auth Debug - Sending to Supabase:", { email, password });
 
     const { data, error } = await window.sync.getClient().auth.signInWithPassword({
       email: email,
