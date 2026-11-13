@@ -24,6 +24,16 @@
 //       cached ui.js / sync.js would keep serving and the fix would not
 //       reach returning users.
 //
+// 1.2 — Cache bump for the mutation-sync hooks. CACHE_NAME goes from
+//       todo-cache-v8 to todo-cache-v9 so returning clients fetch the
+//       updated js/store.js (saveState() now broadcasts sync-list-change /
+//       sync-task-change) and the updated js/sync.js (initSync() now
+//       registers the matching listeners and fetchRemoteState() auto-
+//       migrates local data on first sign-in with an empty cloud). Without
+//       this bump, the mutation hooks would silently no-op on returning
+//       users because the old cached store.js has no broadcast and the
+//       old cached sync.js has no listener.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -46,10 +56,15 @@
 // - Bumped CACHE_NAME from `todo-cache-v6` to `todo-cache-v8` so browsers fetch
 //   the header-init fix in js/ui.js and the getClient() export in js/sync.js
 //   instead of continuing to serve the pre-fix versions from the old cache.
+// - Bumped CACHE_NAME from `todo-cache-v8` to `todo-cache-v9` so browsers fetch
+//   the mutation-sync hooks in js/store.js and js/sync.js. Without the bump,
+//   returning clients would keep the pre-hooks store.js (no broadcast) and
+//   sync.js (no listeners, no auto-migration), and local changes would never
+//   reach Supabase on those devices.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v8';
+const CACHE_NAME = 'todo-cache-v9';
 
 const ASSETS_TO_CACHE = [
   './',
