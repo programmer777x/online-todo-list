@@ -52,6 +52,23 @@
 //        This pairs with store.js v1.3 to keep a single user action at a
 //        single Supabase request (reorder still fans out per sibling by
 //        design; see store.js v1.3 FIXES).
+// v1.6 - Migration and payload fixes after the empty-cloud test. The
+//        auto-migration branch in fetchRemoteState() was guarded on
+//        `window.state`, which is undefined in this codebase (state is a
+//        top-level `let`, not on window), so the whole branch silently
+//        skipped and the cloud stayed empty on first sign-in. The branch
+//        now reads a localState fallback: `typeof state !== 'undefined' ?
+//        state : window.state`, so it works whether or not the global has
+//        been promoted. The hydrate branch is also moved behind an early
+//        return inside the migration block, so the two paths are mutually
+//        exclusive. pushList's created_at fallback was missing the
+//        camelCase key (only `list.created_at`), and lists in the local
+//        shape have neither field -- so the insert would have sent
+//        `undefined`. The payload now uses
+//        `list.createdAt || list.created_at || Date.now()`. Both push
+//        handlers now log the exact payload they are about to send, so a
+//        console snapshot is enough to tell a column-name mismatch from a
+//        network failure.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -72,6 +89,9 @@
 //   has zero lists in the cloud AND local state has at least one list,
 //   upload every local list and its tasks, log "[Sync] Migration complete",
 //   and return without hydrating (the cloud was empty, so nothing to pull).
+// - Console logging in pushList / pushTask: prints "Sync: Pushing list" /
+//   "Sync: Pushing task" with the full payload, so a single console read
+//   shows exactly what the client attempted to insert.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -102,6 +122,25 @@
 //   redundant Supabase upserts per drag or keystroke. store.js v1.3 dispatches
 //   only the specific changed item, and the two push handlers here now
 //   consume that precise shape directly. One action -> one request.
+// - Auto-migration silently skipped. The v1.5 branch tested `window.state`,
+//   which is undefined here -- `state` is declared with a top-level `let`
+//   and never promoted to `window`. So on a fresh sign-in with local data
+//   and an empty cloud, the branch short-circuited and no push happened.
+//   v1.6 uses a `typeof state !== 'undefined' ? state : window.state`
+//   fallback, which resolves correctly in both load patterns. The early
+//   return also splits the migration and hydrate paths cleanly, so a
+//   successful migration can no longer fall through to a no-op hydrate.
+// - pushList sent `created_at: undefined` for every list. Lists in this
+//   codebase carry only { id, name, tasks }, so neither `createdAt` nor
+//   `created_at` exists on the object, and the v1.5 payload builder set
+//   the column to `undefined` -- which Postgres rejects on a NOT NULL
+//   created_at. v1.6 adds `list.createdAt || list.created_at || Date.now()`,
+//   so an insert always carries a real timestamp.
+// - Push payloads were invisible in the console. A failed upsert looked
+//   identical to a successful one from a console read alone. Both handlers
+//   now log "Sync: Pushing list" / "Sync: Pushing task" with the full
+//   payload, so a single screenshot is enough to confirm whether the
+//   client sent the right columns and values.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -163,34 +202,37 @@ async function fetchRemoteState() {
         const { data: lists, error: listsErr } = await supabaseClient
             .from('lists')
             .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: true });
+            .eq('user_id', userId);
 
         if (listsErr) throw listsErr;
 
         const { data: tasks, error: tasksErr } = await supabaseClient
             .from('tasks')
             .select('*')
-            .eq('user_id', userId)
-            .order('created_at', { ascending: true });
+            .eq('user_id', userId);
 
         if (tasksErr) throw tasksErr;
 
         // Auto-migrate: If cloud is empty, upload local data
-        if (lists.length === 0 && window.state && Object.keys(window.state.lists).length > 0) {
-            console.log("Sync: Cloud is empty. Migrating local data...");
-            for (const listId in window.state.lists) {
-                const list = window.state.lists[listId];
-                await pushList('insert', list);
-                for (const task of list.tasks) {
-                    await pushTask('insert', { ...task, listId: list.id });
+        if (lists.length === 0) {
+            // Safely check for the global state object
+            const localState = typeof state !== 'undefined' ? state : window.state;
+            
+            if (localState && Object.keys(localState.lists).length > 0) {
+                console.log("Sync: Cloud is empty. Migrating local data...");
+                for (const listId in localState.lists) {
+                    const list = localState.lists[listId];
+                    await pushList('insert', list);
+                    for (const task of list.tasks) {
+                        await pushTask('insert', { ...task, listId: list.id });
+                    }
                 }
+                console.log("Sync: Migration complete.");
             }
-            console.log("Sync: Migration complete.");
-            return;
+            return; // Don't hydrate if we just migrated
         }
 
-        // Map remote data back to local state shape
+        // If cloud has data, hydrate the local store
         if (window.store && window.store.hydrateFromRemote) {
             window.store.hydrateFromRemote(lists, tasks);
         }
@@ -210,8 +252,9 @@ async function pushList(operation, list) {
                 id: list.id, 
                 user_id: userId, 
                 name: list.name, 
-                created_at: list.created_at || Date.now() 
+                created_at: list.createdAt || list.created_at || Date.now() 
             };
+            console.log("Sync: Pushing list", payload);
             const { error } = await supabaseClient.from('lists').upsert(payload);
             if (error) throw error;
         } else if (operation === 'delete') {
@@ -240,6 +283,7 @@ async function pushTask(operation, task) {
                 parent_id: task.parentId || task.parent_id || null,
                 created_at: task.createdAt || task.created_at || Date.now()
             };
+            console.log("Sync: Pushing task", payload);
             const { error } = await supabaseClient.from('tasks').upsert(payload);
             if (error) throw error;
         } else if (operation === 'delete') {
