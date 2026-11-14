@@ -131,6 +131,12 @@
 //        a list saved locally but never triggered the mutation hook,
 //        leaving the cloud DB out of date.
 //
+// 1.13 — Hide sync bar when signed out. The sync status bar previously
+//        showed an error state if clicked while signed out. Now, the click
+//        handler checks for a session and returns early if none exists,
+//        and showError() checks the session state before unhiding the bar.
+//        The bar remains completely hidden when signed out.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -182,6 +188,8 @@
 //   1.11 revision entry.
 // - 'sync-list-change' dispatch in handleListRename(). See the 1.12
 //   revision entry.
+// - Session checks in the status bar click handler and showError(). See
+//   the 1.13 revision entry.
 //
 // ================================================================================================
 //
@@ -293,6 +301,12 @@
 //   event, so sync.js had no idea the name changed and never pushed the
 //   update. The handler now dispatches the event with op: 'update'. See the
 //   1.12 revision entry.
+// - Clicking the sync bar while signed out showed a misleading "Sync failed"
+//   error. The bar was supposed to be hidden when signed out, but the
+//   click handler still ran and showError() forcibly unhid the bar. The
+//   click handler now checks for a session and returns early, and
+//   showError() checks the session before unhiding. See the 1.13 revision
+//   entry.
 //
 // ================================================================================================
 
@@ -983,6 +997,11 @@ function wireSyncStatusBar() {
   }
 
   function showError() {
+    const session = window.sync ? window.sync.getSession() : null;
+    if (!session) {
+      bar.hidden = true;
+      return;
+    }
     bar.hidden = false;
     bar.classList.remove('is-syncing');
     bar.classList.add('is-error');
@@ -1007,6 +1026,9 @@ function wireSyncStatusBar() {
   // Tap handler
   bar.addEventListener('click', async () => {
     if (syncing) return;
+    
+    const session = window.sync ? window.sync.getSession() : null;
+    if (!session) return; // Do nothing if signed out
 
     // 1. If update is available, reload.
     if (updateAvailable) {
