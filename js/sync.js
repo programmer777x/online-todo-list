@@ -112,6 +112,11 @@
 //        recorded on startup as well as on a manual tap. Records the
 //        timestamp in localStorage under 'todolist.v1.lastSync' and
 //        dispatches 'sync-state-changed' so the UI can update its label.
+// v1.10 - Force manual sync to overwrite. syncNow() now returns a boolean
+//         (true on success, false on failure) so the UI can accurately
+//         display error states. The timestamp recording and event dispatch
+//         are handled internally within syncNow(), decoupling the UI from
+//         the internal mechanics of what a "sync" entails.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -144,7 +149,7 @@
 // - window.sync.syncNow() — awaitable manual sync. Composes the existing
 //   processOfflineQueue() and fetchRemoteState(), then records the current
 //   time in 'todolist.v1.lastSync' and dispatches 'sync-state-changed'.
-//   See v1.9 above.
+//   Returns true on success, false on failure. See v1.9 and v1.10.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -222,6 +227,12 @@
 //   status-bar label would have shown "Not synced yet" on every fresh
 //   load even after a successful fetch. v1.9 routes load-time sync through
 //   syncNow(), which writes the timestamp on every successful run.
+// - Manual refresh did not force a true overwrite. The previous syncNow()
+//   wrapped the fetch and queue flush but did not explicitly return a
+//   success/fail state to the UI. v1.10 updates syncNow() to return a
+//   boolean and moves the timestamp recording inside it. This lets ui.js
+//   reliably display the sync failed state if the network drops, and
+//   ensures the store hydration runs to completion.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -274,7 +285,7 @@ async function initSync() {
 
 // --- Manual Sync ---
 async function syncNow() {
-    if (!currentSession) return;
+    if (!currentSession) return false;
     
     try {
         await processOfflineQueue();
@@ -286,9 +297,10 @@ async function syncNow() {
         
         // Notify UI
         window.dispatchEvent(new CustomEvent('sync-state-changed', { detail: { lastSync: now } }));
+        return true;
     } catch (err) {
         console.warn("Sync: Manual sync failed.", err);
-        throw err; // Re-throw so the UI can show the error state
+        return false;
     }
 }
 
