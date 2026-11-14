@@ -143,6 +143,13 @@
 //        window.location.reload(). This wipes JS memory, re-runs initSync(),
 //        and guarantees fresh data and code on every tap.
 //
+// 1.15 — Reload page immediately after successful sign-in. When a user
+//        signs in after the app has already loaded, fetchRemoteState()
+//        updates the data in memory but does not re-render the UI. This
+//        change makes the password sign-in handler call location.reload()
+//        after success, and the magic-link auth listener reload if
+//        sessionStorage's 'hasSynced' flag is not set.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -197,6 +204,9 @@
 // - Session checks in the status bar click handler and showError(). See
 //   the 1.13 revision entry.
 // - Force reload logic in the status bar click handler. See the 1.14
+//   revision entry.
+// - location.reload() after password sign-in, and a sessionStorage-guarded
+//   reload in the auth listener for magic-link sign-in. See the 1.15
 //   revision entry.
 //
 // ================================================================================================
@@ -320,6 +330,11 @@
 //   forces a window.location.reload() after flushing the queue. This wipes
 //   JS memory and re-runs initSync() from scratch, guaranteeing fresh data.
 //   See the 1.14 revision entry.
+// - Signing in after the app already loaded did not display the cloud data.
+//   fetchRemoteState() updated memory but did not re-render the UI. The
+//   password handler now calls window.location.reload() after success, and
+//   the auth listener reloads for magic-link sign-ins. See the 1.15 revision
+//   entry.
 //
 // ================================================================================================
 
@@ -940,15 +955,23 @@ function wireAuthEvents() {
       dom.authErrorPassword.textContent = error.message;
     } else {
       modal.close();
+      window.location.reload(); // Force the app to load fresh cloud data
     }
   });
 
   // Listen for auth changes from sync.js
+  let hasReloadedForAuth = false;
   window.addEventListener('supabase-auth-changed', (e) => {
     const session = e.detail.session;
     if (session) {
       btn.textContent = session.user.email.split('@')[0];
       btn.title = "Click to sign out";
+      
+      // If we just logged in via magic link, reload to fetch fresh data
+      if (!hasReloadedForAuth && !sessionStorage.getItem('hasSynced')) {
+        sessionStorage.setItem('hasSynced', 'true');
+        window.location.reload();
+      }
     } else {
       btn.textContent = 'Sign in to sync';
       btn.title = "Click to sign in";
