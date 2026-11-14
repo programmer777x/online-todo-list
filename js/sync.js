@@ -105,6 +105,13 @@
 //        place). queueOfflineOperation therefore stays reachable from
 //        both the mutation listeners (via pushTask/pushList on failure)
 //        and the flush path.
+// v1.9 - Expose manual sync. Added syncNow() to compose the existing
+//        processOfflineQueue() and fetchRemoteState() into a single
+//        awaitable operation. The load-time sync in initSync() now
+//        routes through this function so the last-sync timestamp is
+//        recorded on startup as well as on a manual tap. Records the
+//        timestamp in localStorage under 'todolist.v1.lastSync' and
+//        dispatches 'sync-state-changed' so the UI can update its label.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -134,6 +141,10 @@
 // - "Sync: Offline queue drained." console line on a full successful drain,
 //   and "Sync: Flush aborted. <type> still failing." on the first failure.
 //   Both are new in v1.8.
+// - window.sync.syncNow() — awaitable manual sync. Composes the existing
+//   processOfflineQueue() and fetchRemoteState(), then records the current
+//   time in 'todolist.v1.lastSync' and dispatches 'sync-state-changed'.
+//   See v1.9 above.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -207,10 +218,15 @@
 //   push handler has already re-queued that item), so the flush loop
 //   cannot overwrite or remove the rest of the queue after a partial
 //   success.
+// - Load-time sync did not record a last-sync timestamp, so the new
+//   status-bar label would have shown "Not synced yet" on every fresh
+//   load even after a successful fetch. v1.9 routes load-time sync through
+//   syncNow(), which writes the timestamp on every successful run.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 const PENDING_KEY = 'todolist.v1.pending';
+const LAST_SYNC_KEY = 'todolist.v1.lastSync';
 
 // --- Auth State ---
 let currentSession = null;
@@ -225,8 +241,7 @@ async function initSync() {
             window.dispatchEvent(new CustomEvent('supabase-auth-changed', { detail: { session } }));
             
             if (session) {
-                processOfflineQueue();
-                fetchRemoteState();
+                syncNow();
             }
         });
 
@@ -236,8 +251,7 @@ async function initSync() {
         
         if (currentSession) {
             console.log("Sync: User is signed in.");
-            await processOfflineQueue();
-            await fetchRemoteState();
+            await syncNow();
             // Fire event immediately on load so the UI updates
             window.dispatchEvent(new CustomEvent('supabase-auth-changed', { detail: { session: currentSession } }));
         } else {
@@ -255,6 +269,26 @@ async function initSync() {
         });
     } catch (err) {
         console.warn("Sync: Failed to initialize.", err);
+    }
+}
+
+// --- Manual Sync ---
+async function syncNow() {
+    if (!currentSession) return;
+    
+    try {
+        await processOfflineQueue();
+        await fetchRemoteState();
+        
+        // Record success timestamp
+        const now = Date.now();
+        localStorage.setItem(LAST_SYNC_KEY, now.toString());
+        
+        // Notify UI
+        window.dispatchEvent(new CustomEvent('sync-state-changed', { detail: { lastSync: now } }));
+    } catch (err) {
+        console.warn("Sync: Manual sync failed.", err);
+        throw err; // Re-throw so the UI can show the error state
     }
 }
 
@@ -304,6 +338,7 @@ async function fetchRemoteState() {
         }
     } catch (err) {
         console.warn("Sync: Failed to fetch remote state.", err);
+        throw err;
     }
 }
 
@@ -402,7 +437,7 @@ async function processOfflineQueue() {
         // don't duplicate entries or wipe out the remaining items.
         if (!ok) {
             console.log(`Sync: Flush aborted. ${item.type} still failing.`);
-            return;
+            throw new Error(`Failed to push ${item.type}`);
         }
     }
 
@@ -415,6 +450,7 @@ window.sync = {
     init: initSync,
     pushList,
     pushTask,
+    syncNow,
     getSession: () => currentSession,
     getClient: () => supabaseClient
 };
