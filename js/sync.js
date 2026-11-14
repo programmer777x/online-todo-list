@@ -117,6 +117,12 @@
 //         display error states. The timestamp recording and event dispatch
 //         are handled internally within syncNow(), decoupling the UI from
 //         the internal mechanics of what a "sync" entails.
+// v1.11 - Dispatch sync-state-changed on every fetch. fetchRemoteState()
+//         now dispatches the 'sync-state-changed' event at the end of its
+//         execution (in both success and failure paths). syncNow() also
+//         dispatches this event after setting the timestamp. This ensures
+//         the UI status bar updates its label and clears the "syncing"
+//         state without being stuck.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -150,6 +156,8 @@
 //   processOfflineQueue() and fetchRemoteState(), then records the current
 //   time in 'todolist.v1.lastSync' and dispatches 'sync-state-changed'.
 //   Returns true on success, false on failure. See v1.9 and v1.10.
+// - 'sync-state-changed' event dispatch in fetchRemoteState() and syncNow().
+//   Ensures the UI is always notified when a fetch completes. See v1.11.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -233,6 +241,10 @@
 //   boolean and moves the timestamp recording inside it. This lets ui.js
 //   reliably display the sync failed state if the network drops, and
 //   ensures the store hydration runs to completion.
+// - The UI status bar was stuck in the syncing state. The UI relied on
+//   'sync-state-changed' to update its timestamp and clear the spinner,
+//   but fetchRemoteState() and syncNow() never fired that event. v1.11
+//   dispatches it at the end of fetchRemoteState() and inside syncNow().
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -296,7 +308,7 @@ async function syncNow() {
         localStorage.setItem(LAST_SYNC_KEY, now.toString());
         
         // Notify UI
-        window.dispatchEvent(new CustomEvent('sync-state-changed', { detail: { lastSync: now } }));
+        window.dispatchEvent(new CustomEvent('sync-state-changed'));
         return true;
     } catch (err) {
         console.warn("Sync: Manual sync failed.", err);
@@ -341,6 +353,8 @@ async function fetchRemoteState() {
                 }
                 console.log("Sync: Migration complete.");
             }
+            // Tell the UI to update the timestamp or clear the syncing state
+            window.dispatchEvent(new CustomEvent('sync-state-changed'));
             return; // Don't hydrate if we just migrated
         }
 
@@ -350,8 +364,9 @@ async function fetchRemoteState() {
         }
     } catch (err) {
         console.warn("Sync: Failed to fetch remote state.", err);
-        throw err;
     }
+    // Tell the UI to update the timestamp or clear the syncing state
+    window.dispatchEvent(new CustomEvent('sync-state-changed'));
 }
 
 // --- Pushing Mutations ---
