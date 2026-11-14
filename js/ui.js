@@ -150,6 +150,11 @@
 //        after success, and the magic-link auth listener reload if
 //        sessionStorage's 'hasSynced' flag is not set.
 //
+// 1.16 — Clear hasSynced on sign-out. Adds sessionStorage.removeItem('hasSynced')
+//        to the sign-out handler so that the next sign-in triggers the
+//        auto-reload defined in sync.js. Without this, the reload only
+//        happens once per browser session.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -207,6 +212,8 @@
 //   revision entry.
 // - location.reload() after password sign-in, and a sessionStorage-guarded
 //   reload in the auth listener for magic-link sign-in. See the 1.15
+//   revision entry.
+// - sessionStorage.removeItem('hasSynced') on sign-out. See the 1.16
 //   revision entry.
 //
 // ================================================================================================
@@ -335,6 +342,9 @@
 //   password handler now calls window.location.reload() after success, and
 //   the auth listener reloads for magic-link sign-ins. See the 1.15 revision
 //   entry.
+// - The 'hasSynced' sessionStorage flag was never cleared on sign-out,
+//   preventing the auto-reload from firing on the next sign-in. The
+//   sign-out handler now removes it. See the 1.16 revision entry.
 //
 // ================================================================================================
 
@@ -840,6 +850,7 @@ function wireAuthEvents() {
     if (session) {
       if (window.confirm('Sign out? Local data will remain on this device.')) {
         await window.sync.getClient().auth.signOut();
+        sessionStorage.removeItem('hasSynced');
       }
     } else {
       // Reset to Link step
