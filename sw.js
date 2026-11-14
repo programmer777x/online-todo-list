@@ -140,6 +140,12 @@
 //       status bar updates its timestamp and clears the syncing state,
 //       resolving the stuck UI issue.
 //
+// 1.14 — Cache bump for the list rename fix. CACHE_NAME goes from
+//       todo-cache-v22 to todo-cache-v23 so returning clients fetch the
+//       updated js/ui.js where handleListRename() explicitly dispatches
+//       the 'sync-list-change' event. Renaming a list now triggers the
+//       mutation hook and pushes the new name to Supabase.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -241,10 +247,16 @@
 //   fetchRemoteState() and syncNow() tells the UI to update its timestamp
 //   and clear the syncing state, and the fake dispatch on initial load
 //   prevents the status bar from lagging on the first page view.
+// - Bumped CACHE_NAME from `todo-cache-v22` to `todo-cache-v23` so browsers
+//   fetch the list rename fix. handleListRename() now explicitly dispatches
+//   the 'sync-list-change' event, ensuring that renaming a list triggers
+//   the mutation hook and pushes the new name to Supabase. Without this
+//   bump, returning clients would keep the v22 ui.js where renaming a list
+//   only saved locally and never reached the cloud.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v22';
+const CACHE_NAME = 'todo-cache-v23';
 
 const ASSETS_TO_CACHE = [
   './',
