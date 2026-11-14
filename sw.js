@@ -165,6 +165,12 @@
 //       are now sized at 1rem to visually match the delete button (🗑)
 //       on mobile.
 //
+// 1.18 — Cache bump for the sign-in reload fix. CACHE_NAME goes from
+//       todo-cache-v27 to todo-cache-v28 so returning clients fetch the
+//       updated js/ui.js. The app now reloads immediately after a
+//       successful sign-in (both password and magic-link) to ensure
+//       fresh cloud data is displayed.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -285,10 +291,14 @@
 // - Bumped CACHE_NAME from `todo-cache-v26` to `todo-cache-v27` so browsers
 //   fetch the icon size fix. The list-switcher text glyphs (＋ and ✎) are
 //   now sized at 1rem to visually match the delete button (🗑) on mobile.
+// - Bumped CACHE_NAME from `todo-cache-v27` to `todo-cache-v28` so browsers
+//   fetch the sign-in reload fix. The app now reloads immediately after a
+//   successful sign-in (both password and magic-link) to ensure fresh cloud
+//   data is displayed.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v27';
+const CACHE_NAME = 'todo-cache-v28';
 
 const ASSETS_TO_CACHE = [
   './',
