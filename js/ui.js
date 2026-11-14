@@ -162,6 +162,21 @@
 //        since the reload is now handled directly in sync.js's auth state
 //        listener to prevent double-reloads.
 //
+// 1.18 — Delay import sync and remove page reloads. handleImportFile()
+//        now dispatches its 'sync-task-change' events inside an async
+//        loop with a 150ms delay between each task, updating
+//        dom.pasteStatus with "Importing N tasks to cloud..." and then
+//        "Successfully imported ..." when the loop completes. This avoids
+//        Supabase rate limiting on large imports that previously burst
+//        hundreds of events synchronously. The password sign-in handler
+//        no longer calls window.location.reload() on success; it just
+//        closes the modal and lets the existing auth-state event flow
+//        update the UI. The sync status bar click handler no longer
+//        calls window.location.reload(); it sets syncing = true, awaits
+//        window.sync.syncNow() (guarded by a typeof check), resets
+//        syncing = false, and re-renders the bar. Inline syncNow()
+//        failures are caught and logged rather than rethrown.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -226,6 +241,14 @@
 //   task. See the 1.17 revision entry.
 // - Removed the reload block from the supabase-auth-changed listener
 //   since it now lives in sync.js. See the 1.17 revision entry.
+// - Delayed import sync loop in handleImportFile(): dispatches one
+//   'sync-task-change' per task with a 150ms await between each, writes
+//   "Importing N tasks to cloud..." to dom.pasteStatus during the loop,
+//   and overwrites it with "Successfully imported ..." on completion (with
+//   a 5s auto-clear). See the 1.18 revision entry.
+// - "go" step pattern in the import loop uses the awaited timeout, so the
+//   main thread stays responsive between dispatches. See the 1.18 revision
+//   entry.
 //
 // ================================================================================================
 //
@@ -363,6 +386,19 @@
 // - The supabase-auth-changed listener in ui.js was double-firing the
 //   sessionStorage reload that sync.js now handles. Removed the reload block
 //   from ui.js. See the 1.17 revision entry.
+// - Large imports hammered Supabase and hit rate limits. handleImportFile()
+//   dispatched every 'sync-task-change' synchronously, so a 100-task import
+//   fired 100 upserts in a burst. The handler now runs an async loop that
+//   awaits 150ms between dispatches and updates dom.pasteStatus with
+//   progress text. See the 1.18 revision entry.
+// - Password sign-in reloaded the page, wiping local UI state and any
+//   in-progress edits. The handler now closes the modal and lets the
+//   auth-state event flow update the header button and sync bar. See the
+//   1.18 revision entry.
+// - The manual sync button reloaded the page, which wiped JS memory and
+//   made the sync feel heavy on every tap. The handler now runs
+//   window.sync.syncNow(), toggles the syncing state around it, and
+//   re-renders the bar in place. See the 1.18 revision entry.
 //
 // ================================================================================================
 
@@ -479,22 +515,26 @@ function handleImportFile(file) {
     ui.addingSubtaskTo = null;
     ui.openMenuTaskId = null;
 
-    // Dispatch events for every imported task so they sync to Supabase
-    newList.tasks.forEach(task => {
-      window.dispatchEvent(new CustomEvent('sync-task-change', { 
-        detail: { op: 'insert', task: { ...task, listId: newList.id } } 
-      }));
-    });
-
     saveState();
     renderListSwitcher();
     render();
 
-    dom.pasteStatus.textContent =
-      `Imported ${sanitizedTasks.length} task${sanitizedTasks.length === 1 ? '' : 's'} as "${newList.name}".`;
-    setTimeout(() => {
-      if (dom.pasteStatus.textContent.startsWith('Imported')) dom.pasteStatus.textContent = '';
-    }, 5000);
+    // Sync to Supabase with a delay to avoid rate limiting
+    (async () => {
+      dom.pasteStatus.textContent = `Importing ${sanitizedTasks.length} tasks to cloud...`;
+      for (let i = 0; i < newList.tasks.length; i++) {
+        const task = newList.tasks[i];
+        window.dispatchEvent(new CustomEvent('sync-task-change', { 
+          detail: { op: 'insert', task: { ...task, listId: newList.id } } 
+        }));
+        // Wait 150ms between each task
+        await new Promise(r => setTimeout(r, 150));
+      }
+      dom.pasteStatus.textContent = `Successfully imported "${newList.name}".`;
+      setTimeout(() => {
+        if (dom.pasteStatus.textContent.startsWith('Successfully')) dom.pasteStatus.textContent = '';
+      }, 5000);
+    })();
   };
 
   reader.onerror = () => {
@@ -991,7 +1031,6 @@ function wireAuthEvents() {
       dom.authErrorPassword.textContent = error.message;
     } else {
       modal.close();
-      window.location.reload(); // Force the app to load fresh cloud data
     }
   });
 
@@ -1099,17 +1138,15 @@ function wireSyncStatusBar() {
     renderBar();
 
     try {
-      // 1. Process queue immediately (silent if offline)
-      if (window.sync && window.sync.processOfflineQueue) {
-        await window.sync.processOfflineQueue();
+      if (window.sync && window.sync.syncNow) {
+        await window.sync.syncNow();
       }
     } catch (e) {
-      console.warn("Queue flush failed, reloading anyway...");
+      console.warn("Sync failed", e);
     }
-
-    // 2. Force a full browser refresh. This wipes JS memory, 
-    //    re-runs initSync(), and fetches fresh data from Supabase.
-    window.location.reload();
+    
+    syncing = false;
+    renderBar();
   });
 }
 
