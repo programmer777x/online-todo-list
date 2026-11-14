@@ -146,6 +146,13 @@
 //       the 'sync-list-change' event. Renaming a list now triggers the
 //       mutation hook and pushes the new name to Supabase.
 //
+// 1.15 — Cache bump for the signed-out sync bar fix. CACHE_NAME goes from
+//       todo-cache-v23 to todo-cache-v24 so returning clients fetch the
+//       updated js/ui.js. The sync status bar now remains completely
+//       hidden when the user is signed out, and the click handler returns
+//       early if no session exists, preventing a misleading "Sync failed"
+//       error state.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -253,10 +260,15 @@
 //   the mutation hook and pushes the new name to Supabase. Without this
 //   bump, returning clients would keep the v22 ui.js where renaming a list
 //   only saved locally and never reached the cloud.
+// - Bumped CACHE_NAME from `todo-cache-v23` to `todo-cache-v24` so browsers
+//   fetch the signed-out sync bar fix. The sync status bar now remains
+//   completely hidden when the user is signed out, and the click handler
+//   returns early if no session exists, preventing a misleading "Sync failed"
+//   error state.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v23';
+const CACHE_NAME = 'todo-cache-v24';
 
 const ASSETS_TO_CACHE = [
   './',
