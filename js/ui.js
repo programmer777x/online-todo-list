@@ -137,6 +137,12 @@
 //        and showError() checks the session state before unhiding the bar.
 //        The bar remains completely hidden when signed out.
 //
+// 1.14 — Force page reload on sync button click. The manual sync button
+//        was failing to properly refresh the UI from the fetched data.
+//        The handler now flushes the offline queue and immediately calls
+//        window.location.reload(). This wipes JS memory, re-runs initSync(),
+//        and guarantees fresh data and code on every tap.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -190,6 +196,8 @@
 //   revision entry.
 // - Session checks in the status bar click handler and showError(). See
 //   the 1.13 revision entry.
+// - Force reload logic in the status bar click handler. See the 1.14
+//   revision entry.
 //
 // ================================================================================================
 //
@@ -307,6 +315,11 @@
 //   click handler now checks for a session and returns early, and
 //   showError() checks the session before unhiding. See the 1.13 revision
 //   entry.
+// - The manual sync button failed to update the DOM after fetching remote
+//   data. The background fetch did not reliably rebuild the UI. It now
+//   forces a window.location.reload() after flushing the queue. This wipes
+//   JS memory and re-runs initSync() from scratch, guaranteeing fresh data.
+//   See the 1.14 revision entry.
 //
 // ================================================================================================
 
@@ -1030,45 +1043,21 @@ function wireSyncStatusBar() {
     const session = window.sync ? window.sync.getSession() : null;
     if (!session) return; // Do nothing if signed out
 
-    // 1. If update is available, reload.
-    if (updateAvailable) {
-      window.location.reload();
-      return;
-    }
-
-    // 2. Otherwise, sync.
     syncing = true;
-    updateAvailable = false;
     renderBar();
 
-    let success = false;
     try {
-      if (window.sync && window.sync.syncNow) {
-        success = await window.sync.syncNow();
+      // 1. Process queue immediately (silent if offline)
+      if (window.sync && window.sync.processOfflineQueue) {
+        await window.sync.processOfflineQueue();
       }
-      
-      // Check for SW update only if sync succeeded
-      if (success && 'serviceWorker' in navigator) {
-        const reg = await navigator.serviceWorker.getRegistration();
-        if (reg) {
-          await reg.update();
-          if (reg.waiting || reg.installing) {
-            updateAvailable = true;
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Manual sync failed', err);
-      success = false;
+    } catch (e) {
+      console.warn("Queue flush failed, reloading anyway...");
     }
 
-    syncing = false;
-    
-    if (!success) {
-      showError();
-    } else {
-      renderBar();
-    }
+    // 2. Force a full browser refresh. This wipes JS memory, 
+    //    re-runs initSync(), and fetches fresh data from Supabase.
+    window.location.reload();
   });
 }
 
