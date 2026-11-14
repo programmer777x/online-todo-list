@@ -171,6 +171,13 @@
 //       successful sign-in (both password and magic-link) to ensure
 //       fresh cloud data is displayed.
 //
+// 1.19 — Cache bump for sign-in reload and icon fixes. CACHE_NAME goes
+//       from todo-cache-v28 to todo-cache-v29 so returning clients fetch
+//       the updated js/sync.js (which forces a reload on sign-in via
+//       sessionStorage), js/ui.js (which clears that flag on sign-out),
+//       and css/base.css (which sizes the list-switcher text glyphs
+//       individually to match the delete button).
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -295,10 +302,15 @@
 //   fetch the sign-in reload fix. The app now reloads immediately after a
 //   successful sign-in (both password and magic-link) to ensure fresh cloud
 //   data is displayed.
+// - Bumped CACHE_NAME from `todo-cache-v28` to `todo-cache-v29` so browsers
+//   fetch the sign-in reload and icon fixes. The app now reloads immediately
+//   after a successful sign-in via sync.js (clearing the sessionStorage flag
+//   on sign-out in ui.js), and the list-switcher text glyphs are sized
+//   individually to match the delete button.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v28';
+const CACHE_NAME = 'todo-cache-v29';
 
 const ASSETS_TO_CACHE = [
   './',
