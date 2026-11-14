@@ -102,6 +102,15 @@
 //       click, each with a specific error message rendered in the
 //       corresponding .auth-error paragraph.
 //
+// 1.9 — Manual sync status bar. Wires the new #sync-status-bar button
+//       directly under the header. The bar is hidden by default and
+//       toggled based on session state (same source as the auth button).
+//       On click, it runs window.sync.syncNow(), then checks the service
+//       worker registration for a waiting update. If a worker is waiting,
+//       it flips to the update-available state and waits for a second
+//       tap to reload. On success, it updates the "Last synced" label
+//       from the todolist.v1.lastSync key.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -143,6 +152,10 @@
 //   send-link click with a specific message; an empty email or password
 //   blocks the password sign-in click with a specific message. See the
 //   1.8 revision entry.
+// - wireSyncStatusBar() — binds the new manual-sync status bar. Reads
+//   initial visibility from window.sync.getSession(), listens for auth
+//   changes, and handles the tap flow (syncNow -> SW update check ->
+//   reload prompt). See the 1.9 revision entry.
 //
 // ================================================================================================
 //
@@ -233,6 +246,14 @@
 //   is always visible, disables it when switching to password so it can't
 //   change mid-flow, and adds specific validation messages for the two
 //   empty-field cases. See the 1.8 revision entry.
+// - No way to refresh on demand in the iPhone Home Screen PWA. The new
+//   status bar (1.9) is the refresh control: a real button under the
+//   header that re-runs the load-time sync path and, if a service worker
+//   update is waiting, prompts for a reload on the next tap. It is not
+//   pull-to-refresh (which conflicts with SortableJS drag-to-reorder and is
+//   unreliable in iOS standalone PWAs) and it does not gate on
+//   display-mode: standalone (it is for every signed-in user on every
+//   device).
 //
 // ================================================================================================
 
@@ -872,6 +893,116 @@ function wireAuthEvents() {
 
 
 /* ================================================================================================
+   SYNC STATUS BAR
+   ================================================================================================ */
+
+function wireSyncStatusBar() {
+  const bar = document.getElementById('sync-status-bar');
+  const textSpan = document.getElementById('sync-status-text');
+  if (!bar || !textSpan) return;
+
+  const LAST_SYNC_KEY = 'todolist.v1.lastSync';
+  let updateAvailable = false;
+  let syncing = false;
+
+  function formatTime(ms) {
+    if (!ms) return 'Not synced yet';
+    return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function renderBar() {
+    // Visibility: only show when signed in
+    const session = window.sync ? window.sync.getSession() : null;
+    if (!session) {
+      bar.hidden = true;
+      return;
+    }
+    bar.hidden = false;
+
+    // State classes
+    bar.classList.toggle('is-syncing', syncing);
+    bar.classList.toggle('is-error', false); // Reset error unless explicitly set below
+
+    if (syncing) {
+      textSpan.textContent = 'Syncing…';
+      bar.disabled = true;
+    } else if (updateAvailable) {
+      textSpan.textContent = 'Update available — tap to reload';
+      bar.disabled = false;
+    } else {
+      // Idle
+      const lastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY), 10);
+      textSpan.textContent = `Last synced ${formatTime(lastSync)}`;
+      bar.disabled = false;
+    }
+  }
+
+  function showError() {
+    bar.hidden = false;
+    bar.classList.remove('is-syncing');
+    bar.classList.add('is-error');
+    const lastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY), 10);
+    textSpan.textContent = `Sync failed — tap to retry · Last synced ${formatTime(lastSync)}`;
+    bar.disabled = false;
+  }
+
+  // Initial render
+  renderBar();
+
+  // Listen for auth changes to update visibility
+  window.addEventListener('supabase-auth-changed', () => {
+    renderBar();
+  });
+
+  // Listen for successful syncs from anywhere (load-time or manual)
+  window.addEventListener('sync-state-changed', () => {
+    renderBar();
+  });
+
+  // Tap handler
+  bar.addEventListener('click', async () => {
+    if (syncing) return;
+
+    // 1. If update is available, reload.
+    if (updateAvailable) {
+      window.location.reload();
+      return;
+    }
+
+    // 2. Otherwise, sync.
+    syncing = true;
+    updateAvailable = false;
+    renderBar();
+
+    try {
+      if (window.sync && window.sync.syncNow) {
+        await window.sync.syncNow();
+      }
+      
+      // Check for SW update
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) {
+          await reg.update();
+          if (reg.waiting || reg.installing) {
+            updateAvailable = true;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Manual sync failed', err);
+      syncing = false;
+      showError();
+      return;
+    }
+
+    syncing = false;
+    renderBar();
+  });
+}
+
+
+/* ================================================================================================
    INIT
    ================================================================================================ */
 
@@ -882,6 +1013,7 @@ function init() {
   renderListSwitcher();
   wireEvents();
   wireAuthEvents();
+  wireSyncStatusBar();
   render();
 
   // Initialize SortableJS after the first render.
