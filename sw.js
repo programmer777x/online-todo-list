@@ -9,6 +9,9 @@
 // without a manual cache clear; everything else (CSS, JS, manifest, icons) is served from the
 // cache first and refreshed in the background by the install/activate cycle.
 //
+// Supabase API and Auth traffic is never intercepted — the fetch listener returns early for any
+// request whose hostname ends in '.supabase.co', so those calls go straight to the network.
+//
 // When the app is updated, the CACHE_NAME string should be bumped to invalidate the old cache
 // and force the new assets to be downloaded.
 //
@@ -199,6 +202,14 @@
 //       the sync bar) and the js/sync.js change (no auto-reload on
 //       SIGNED_IN).
 //
+// 1.22 — Service worker bypass for Supabase traffic. The fetch listener now
+//       returns early for any request whose hostname ends in '.supabase.co',
+//       so Supabase API and Auth calls go straight to the network and never
+//       touch the cache. This removes the stale-GET failure mode where the
+//       cache-first branch served a pre-import task list on a repeat read,
+//       which made a fully-saved import look partial. CACHE_NAME goes from
+//       todo-cache-v31 to todo-cache-v32 to deliver the new sw.js logic.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -208,6 +219,9 @@
 //   pathnames ending in '/' or 'index.html' bypass the cache on the happy
 //   path and fall back to caches.match('./index.html') only when the
 //   network fetch rejects. See 1.21 above.
+// - Supabase bypass branch in the fetch listener: hostname.endsWith('.supabase.co')
+//   returns without calling respondWith(), letting the browser handle the
+//   request natively. See 1.22.
 //
 // ================================================================================================
 //
@@ -347,10 +361,14 @@
 //   bar) and js/sync.js (no auto-reload on SIGNED_IN). Combined with the
 //   new network-first HTML shell, returning clients pick up these fixes on
 //   the next load even though the shell is no longer cached.
+// - Imported tasks could look partial after a reload because the cache-first
+//   branch cached Supabase GET responses and served a pre-import snapshot on
+//   a repeat identical read. The fetch listener now bypasses all Supabase
+//   traffic, so reads always come from the network. See 1.22.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v31';
+const CACHE_NAME = 'todo-cache-v32';
 
 const ASSETS_TO_CACHE = [
   './',
@@ -393,9 +411,16 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: network-first for index.html, cache-first for everything else
+// Fetch: network-first for index.html, cache-first for everything else,
+// Supabase traffic bypassed entirely.
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
+
+  // BYPASS: Never intercept Supabase API or Auth requests.
+  // Let the browser handle them natively.
+  if (url.hostname.endsWith('.supabase.co')) {
+    return;
+  }
 
   // Always fetch the HTML shell from the network so updates land immediately
   if (url.pathname.endsWith('/') || url.pathname.endsWith('index.html')) {
