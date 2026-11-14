@@ -178,6 +178,13 @@
 //       and css/base.css (which sizes the list-switcher text glyphs
 //       individually to match the delete button).
 //
+// 1.20 — Cache bump for the import sync and auth reload fixes. CACHE_NAME
+//       goes from todo-cache-v29 to todo-cache-v30 so returning clients
+//       fetch the updated js/ui.js (which now dispatches sync events for
+//       imported tasks and removes the old auth reload guard) and js/sync.js
+//       (which moves the auth reload into the onAuthStateChange listener
+//       to fix the sign-in race condition).
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -307,10 +314,15 @@
 //   after a successful sign-in via sync.js (clearing the sessionStorage flag
 //   on sign-out in ui.js), and the list-switcher text glyphs are sized
 //   individually to match the delete button.
+// - Bumped CACHE_NAME from `todo-cache-v29` to `todo-cache-v30` so browsers
+//   fetch the import sync and auth reload fixes. The import handler now
+//   dispatches sync events for every imported task, and the auto-reload on
+//   sign-in has been moved into the onAuthStateChange listener to fix the
+//   race condition.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v29';
+const CACHE_NAME = 'todo-cache-v30';
 
 const ASSETS_TO_CACHE = [
   './',
