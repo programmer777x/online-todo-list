@@ -111,6 +111,14 @@
 //       tap to reload. On success, it updates the "Last synced" label
 //       from the todolist.v1.lastSync key.
 //
+// 1.10 — Sync result handling. The status bar click handler now explicitly
+//        handles the boolean return from window.sync.syncNow(). If it
+//        returns false (network failure or offline queue abort), the bar
+//        switches to the error state instead of assuming success. If it
+//        returns true, it proceeds to check for service worker updates.
+//        Manual timestamp updates in ui.js are removed because sync.js
+//        now owns that responsibility.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -156,6 +164,8 @@
 //   initial visibility from window.sync.getSession(), listens for auth
 //   changes, and handles the tap flow (syncNow -> SW update check ->
 //   reload prompt). See the 1.9 revision entry.
+// - Error handling in the status bar click flow for the boolean return
+//   from syncNow(). See the 1.10 revision entry.
 //
 // ================================================================================================
 //
@@ -254,6 +264,11 @@
 //   unreliable in iOS standalone PWAs) and it does not gate on
 //   display-mode: standalone (it is for every signed-in user on every
 //   device).
+// - The status bar click handler assumed success. If syncNow() failed
+//   (network offline, queue flush aborted), it still proceeded to the SW
+//   update check and ended in the idle state, silently masking the failure.
+//   It now reads the boolean return from syncNow(): false -> error state,
+//   true -> SW update check and idle. See the 1.10 revision entry.
 //
 // ================================================================================================
 
@@ -974,13 +989,14 @@ function wireSyncStatusBar() {
     updateAvailable = false;
     renderBar();
 
+    let success = false;
     try {
       if (window.sync && window.sync.syncNow) {
-        await window.sync.syncNow();
+        success = await window.sync.syncNow();
       }
       
-      // Check for SW update
-      if ('serviceWorker' in navigator) {
+      // Check for SW update only if sync succeeded
+      if (success && 'serviceWorker' in navigator) {
         const reg = await navigator.serviceWorker.getRegistration();
         if (reg) {
           await reg.update();
@@ -991,13 +1007,16 @@ function wireSyncStatusBar() {
       }
     } catch (err) {
       console.warn('Manual sync failed', err);
-      syncing = false;
-      showError();
-      return;
+      success = false;
     }
 
     syncing = false;
-    renderBar();
+    
+    if (!success) {
+      showError();
+    } else {
+      renderBar();
+    }
   });
 }
 
