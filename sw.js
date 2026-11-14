@@ -153,6 +153,12 @@
 //       early if no session exists, preventing a misleading "Sync failed"
 //       error state.
 //
+// 1.16 — Cache bump for the reload sync behavior. CACHE_NAME goes from
+//       todo-cache-v24 to todo-cache-v25 so returning clients fetch the
+//       updated js/ui.js and js/sync.js. The manual sync button now flushes
+//       the offline queue and forces a page reload, which wipes JS memory
+//       and re-runs initSync() to guarantee fresh data from Supabase.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -265,10 +271,15 @@
 //   completely hidden when the user is signed out, and the click handler
 //   returns early if no session exists, preventing a misleading "Sync failed"
 //   error state.
+// - Bumped CACHE_NAME from `todo-cache-v24` to `todo-cache-v25` so browsers
+//   fetch the reload sync behavior. The sync button now flushes the offline
+//   queue and forces a page reload, wiping JS memory and re-running
+//   initSync() to guarantee fresh data from Supabase. This avoids the UI
+//   failing to update when fetchRemoteState() is called in the background.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v24';
+const CACHE_NAME = 'todo-cache-v25';
 
 const ASSETS_TO_CACHE = [
   './',
