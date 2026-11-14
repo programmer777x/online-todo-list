@@ -204,12 +204,14 @@ body {
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-/* Bump text-glyph buttons to match the visual weight of the emoji delete button */
-#list-new-button {
-  font-size: 1.125rem;
-}
-#list-rename-button {
-  font-size: 1.5rem;
+/* Only bump text-glyph buttons on mobile screens where the emoji renders overly large */
+@media (max-width: 639px) {
+  #list-new-button {
+    font-size: 1.125rem;
+  }
+  #list-rename-button {
+    font-size: 1.5rem;
+  }
 }
 
 .icon-button:hover:not(:disabled) {
