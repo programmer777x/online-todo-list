@@ -124,6 +124,14 @@
 //       button, meaning no way to pull changes from another device
 //       without a full PWA restart.
 //
+// 1.12 — Cache bump for the manual sync fix. CACHE_NAME goes from
+//       todo-cache-v19 to todo-cache-v20 so returning clients fetch the
+//       updated js/sync.js (which exposes a boolean-returning
+//       window.sync.syncNow()) and js/ui.js (which handles the result to
+//       show success or error states). The manual sync now explicitly
+//       returns success or failure instead of assuming success, and the
+//       UI falls back to an error state if the network is down.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -216,10 +224,14 @@
 //   app restart, specifically for iOS standalone PWAs that have no reload
 //   control. This bump also delivers the font-size fix that makes the
 //   ＋ and ✎ list buttons match the size of the 🗑 delete button.
+// - Bumped CACHE_NAME from `todo-cache-v19` to `todo-cache-v20` so browsers
+//   fetch the manual sync fix. The boolean return from syncNow() lets the
+//   UI show the "Sync failed" state on a network error instead of
+//   silently assuming success and showing a stale timestamp.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v19';
+const CACHE_NAME = 'todo-cache-v20';
 
 const ASSETS_TO_CACHE = [
   './',
