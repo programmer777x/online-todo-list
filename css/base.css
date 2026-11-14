@@ -204,6 +204,7 @@ body {
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
+/* Bump text-glyph buttons to match the visual weight of the emoji delete button */
 #list-new-button,
 #list-rename-button {
   font-size: 1rem;
