@@ -132,6 +132,14 @@
 //       returns success or failure instead of assuming success, and the
 //       UI falls back to an error state if the network is down.
 //
+// 1.13 — Cache bump for the sync-event fix. CACHE_NAME goes from
+//       todo-cache-v21 to todo-cache-v22 so returning clients fetch the
+//       updated js/sync.js (which now dispatches 'sync-state-changed' at
+//       the end of fetchRemoteState() and inside syncNow()) and js/ui.js
+//       (which fires a fake event on initial load). This ensures the
+//       status bar updates its timestamp and clears the syncing state,
+//       resolving the stuck UI issue.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -228,10 +236,15 @@
 //   fetch the manual sync fix. The boolean return from syncNow() lets the
 //   UI show the "Sync failed" state on a network error instead of
 //   silently assuming success and showing a stale timestamp.
+// - Bumped CACHE_NAME from `todo-cache-v21` to `todo-cache-v22` so browsers
+//   fetch the sync-event fix. The 'sync-state-changed' event dispatched by
+//   fetchRemoteState() and syncNow() tells the UI to update its timestamp
+//   and clear the syncing state, and the fake dispatch on initial load
+//   prevents the status bar from lagging on the first page view.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v20';
+const CACHE_NAME = 'todo-cache-v22';
 
 const ASSETS_TO_CACHE = [
   './',
