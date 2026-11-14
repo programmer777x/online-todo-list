@@ -115,6 +115,15 @@
 //       flush → row in Supabase. Last-write-wins also verified: offline
 //       edits to "A" then "B" → online flush → Supabase row shows "B".
 //
+// 1.11 — Cache bump for the manual sync status bar. CACHE_NAME goes from
+//       todo-cache-v18 to todo-cache-v19 so returning clients fetch the
+//       new markup (index.html), styling (css/base.css), logic
+//       (js/sync.js, js/ui.js), and the bumped font size for the list
+//       switcher text glyphs. Without this bump, returning clients would
+//       stay on the v18 cache and never see the new manual refresh
+//       button, meaning no way to pull changes from another device
+//       without a full PWA restart.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -201,10 +210,16 @@
 //   remaining items in localStorage) instead of clearing the queue after
 //   a partial success. Without this bump, returning clients would keep
 //   the v17 sync.js and continue losing offline mutations.
+// - Bumped CACHE_NAME from `todo-cache-v18` to `todo-cache-v19` so browsers
+//   fetch the manual sync status bar. The new UI (index.html, css/base.css,
+//   js/sync.js, js/ui.js) provides a way to trigger a sync without a full
+//   app restart, specifically for iOS standalone PWAs that have no reload
+//   control. This bump also delivers the font-size fix that makes the
+//   ＋ and ✎ list buttons match the size of the 🗑 delete button.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v18';
+const CACHE_NAME = 'todo-cache-v19';
 
 const ASSETS_TO_CACHE = [
   './',
