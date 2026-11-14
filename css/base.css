@@ -11,6 +11,7 @@
      2. Base reset & page background
      3. App shell
      4. Header (brand, list switcher, theme switcher)
+     4.5 Sync status bar
      5. Quick add
      6. Search
      7. Sections & section headers
@@ -203,6 +204,11 @@ body {
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
+#list-new-button,
+#list-rename-button {
+  font-size: 1rem;
+}
+
 .icon-button:hover:not(:disabled) {
   background: var(--card-bg-hover);
   color: var(--text-primary);
@@ -245,6 +251,69 @@ body {
   outline: none;
   box-shadow: var(--accent-glow);
   border-color: var(--accent);
+}
+
+/* ================================================================================================
+   4.5 SYNC STATUS BAR
+   ================================================================================================ */
+
+.sync-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  margin-top: calc(var(--space-2) * -1); /* Tighten gap below header */
+  font-family: inherit;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.sync-status-bar:hover:not(:disabled) {
+  background: var(--card-bg-hover);
+  color: var(--text-secondary);
+}
+
+.sync-status-bar:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+}
+
+.sync-status-bar:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.sync-status-icon {
+  display: inline-block;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+/* Spin animation for the icon while syncing */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sync-status-bar.is-syncing .sync-status-icon {
+  animation: spin 1s linear infinite;
+}
+
+/* Error state text color */
+.sync-status-bar.is-error {
+  color: var(--danger);
+}
+
+.sync-status-bar.is-error:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--accent-soft); /* Subtle error highlight */
 }
 
 /* ================================================================================================
