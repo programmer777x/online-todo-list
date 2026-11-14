@@ -102,6 +102,19 @@
 //       attempt even when every push failed — the "offline test passes"
 //       failure mode.
 //
+// 1.10 — Cache bump for the offline-queue durability fix (final state).
+//       CACHE_NAME goes from todo-cache-v17 to todo-cache-v18 so returning
+//       clients fetch the corrected js/sync.js (v1.8) whose pushList /
+//       pushTask re-queue on failure and whose processOfflineQueue aborts
+//       on the first failed push instead of overwriting or clearing the
+//       queue. The v17 bump above was authored against the v1.7 split
+//       (inner re-queue removed); the v1.8 sync.js restores the catch-block
+//       re-queue and the abort-on-failure flush, and this bump is what
+//       guarantees that corrected file reaches every client. Verified
+//       end-to-end: offline add → queued in todolist.v1.pending → online
+//       flush → row in Supabase. Last-write-wins also verified: offline
+//       edits to "A" then "B" → online flush → Supabase row shows "B".
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -178,10 +191,20 @@
 //   swallow errors and re-queue internally) and the v16 processOfflineQueue
 //   (which cannot see those failures and always clears the queue on a
 //   completed flush attempt).
+// - Bumped CACHE_NAME from `todo-cache-v17` to `todo-cache-v18` so browsers
+//   fetch the corrected v1.8 js/sync.js. The v1.7 split removed the
+//   catch-block re-queue from pushList/pushTask and left re-queueing to
+//   processOfflineQueue, which only runs on a flush attempt — so a live
+//   mutation that failed while offline never entered PENDING_KEY at all
+//   and was lost. v1.8 restores the catch-block re-queue and rewrites
+//   processOfflineQueue to abort on the first failed push (leaving the
+//   remaining items in localStorage) instead of clearing the queue after
+//   a partial success. Without this bump, returning clients would keep
+//   the v17 sync.js and continue losing offline mutations.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v17';
+const CACHE_NAME = 'todo-cache-v18';
 
 const ASSETS_TO_CACHE = [
   './',
