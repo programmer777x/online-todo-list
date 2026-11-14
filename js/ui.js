@@ -155,6 +155,13 @@
 //        auto-reload defined in sync.js. Without this, the reload only
 //        happens once per browser session.
 //
+// 1.17 — Import sync and auth reload cleanup. handleImportFile() now
+//        dispatches 'sync-task-change' events for every imported task so
+//        they are pushed to Supabase immediately. The old sessionStorage
+//        reload guard is removed from the supabase-auth-changed listener
+//        since the reload is now handled directly in sync.js's auth state
+//        listener to prevent double-reloads.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -215,6 +222,10 @@
 //   revision entry.
 // - sessionStorage.removeItem('hasSynced') on sign-out. See the 1.16
 //   revision entry.
+// - 'sync-task-change' dispatch inside handleImportFile() for every imported
+//   task. See the 1.17 revision entry.
+// - Removed the reload block from the supabase-auth-changed listener
+//   since it now lives in sync.js. See the 1.17 revision entry.
 //
 // ================================================================================================
 //
@@ -345,6 +356,13 @@
 // - The 'hasSynced' sessionStorage flag was never cleared on sign-out,
 //   preventing the auto-reload from firing on the next sign-in. The
 //   sign-out handler now removes it. See the 1.16 revision entry.
+// - Imported tasks were not reaching Supabase. handleImportFile() created
+//   the list and tasks locally but never dispatched the 'sync-task-change'
+//   events that trigger pushTask(). It now loops over the imported tasks
+//   and dispatches for each. See the 1.17 revision entry.
+// - The supabase-auth-changed listener in ui.js was double-firing the
+//   sessionStorage reload that sync.js now handles. Removed the reload block
+//   from ui.js. See the 1.17 revision entry.
 //
 // ================================================================================================
 
@@ -460,6 +478,13 @@ function handleImportFile(file) {
     ui.editingId = null;
     ui.addingSubtaskTo = null;
     ui.openMenuTaskId = null;
+
+    // Dispatch events for every imported task so they sync to Supabase
+    newList.tasks.forEach(task => {
+      window.dispatchEvent(new CustomEvent('sync-task-change', { 
+        detail: { op: 'insert', task: { ...task, listId: newList.id } } 
+      }));
+    });
 
     saveState();
     renderListSwitcher();
@@ -971,18 +996,11 @@ function wireAuthEvents() {
   });
 
   // Listen for auth changes from sync.js
-  let hasReloadedForAuth = false;
   window.addEventListener('supabase-auth-changed', (e) => {
     const session = e.detail.session;
     if (session) {
       btn.textContent = session.user.email.split('@')[0];
       btn.title = "Click to sign out";
-      
-      // If we just logged in via magic link, reload to fetch fresh data
-      if (!hasReloadedForAuth && !sessionStorage.getItem('hasSynced')) {
-        sessionStorage.setItem('hasSynced', 'true');
-        window.location.reload();
-      }
     } else {
       btn.textContent = 'Sign in to sync';
       btn.title = "Click to sign in";
