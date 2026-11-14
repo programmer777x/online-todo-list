@@ -123,6 +123,11 @@
 //         dispatches this event after setting the timestamp. This ensures
 //         the UI status bar updates its label and clears the "syncing"
 //         state without being stuck.
+// v1.12 - Expose processOfflineQueue. Added processOfflineQueue to the
+//         window.sync export so the UI can trigger an immediate queue
+//         flush before forcing a page reload. This supports the new
+//         sync-button behavior, which flushes the queue and then reloads
+//         to ensure fresh data from Supabase.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -158,6 +163,8 @@
 //   Returns true on success, false on failure. See v1.9 and v1.10.
 // - 'sync-state-changed' event dispatch in fetchRemoteState() and syncNow().
 //   Ensures the UI is always notified when a fetch completes. See v1.11.
+// - window.sync.processOfflineQueue() — exposes the queue flush so the UI
+//   can call it before a page reload. See v1.12.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -477,6 +484,7 @@ window.sync = {
     init: initSync,
     pushList,
     pushTask,
+    processOfflineQueue,
     syncNow,
     getSession: () => currentSession,
     getClient: () => supabaseClient
