@@ -159,6 +159,12 @@
 //       the offline queue and forces a page reload, which wipes JS memory
 //       and re-runs initSync() to guarantee fresh data from Supabase.
 //
+// 1.17 — Cache bump for the icon size fix. CACHE_NAME goes from
+//       todo-cache-v26 to todo-cache-v27 so returning clients fetch the
+//       updated css/base.css. The list-switcher text glyphs (＋ and ✎)
+//       are now sized at 1rem to visually match the delete button (🗑)
+//       on mobile.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -276,10 +282,13 @@
 //   queue and forces a page reload, wiping JS memory and re-running
 //   initSync() to guarantee fresh data from Supabase. This avoids the UI
 //   failing to update when fetchRemoteState() is called in the background.
+// - Bumped CACHE_NAME from `todo-cache-v26` to `todo-cache-v27` so browsers
+//   fetch the icon size fix. The list-switcher text glyphs (＋ and ✎) are
+//   now sized at 1rem to visually match the delete button (🗑) on mobile.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v25';
+const CACHE_NAME = 'todo-cache-v27';
 
 const ASSETS_TO_CACHE = [
   './',
