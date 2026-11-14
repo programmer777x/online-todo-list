@@ -119,6 +119,12 @@
 //        Manual timestamp updates in ui.js are removed because sync.js
 //        now owns that responsibility.
 //
+// 1.11 — Initial render sync event. Dispatches a fake 'sync-state-changed'
+//        event immediately after the initial renderBar() call. This
+//        ensures the status bar updates its timestamp label on the first
+//        page load if a sync already occurred before the listener was
+//        attached.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -166,6 +172,8 @@
 //   reload prompt). See the 1.9 revision entry.
 // - Error handling in the status bar click flow for the boolean return
 //   from syncNow(). See the 1.10 revision entry.
+// - Initial sync-state-changed dispatch in wireSyncStatusBar(). See the
+//   1.11 revision entry.
 //
 // ================================================================================================
 //
@@ -269,6 +277,9 @@
 //   update check and ended in the idle state, silently masking the failure.
 //   It now reads the boolean return from syncNow(): false -> error state,
 //   true -> SW update check and idle. See the 1.10 revision entry.
+// - The status bar initial render could lag behind a sync that completed
+//   before the listener was attached. Dispatches a fake event on setup. See
+//   the 1.11 revision entry.
 //
 // ================================================================================================
 
