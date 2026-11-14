@@ -4,8 +4,10 @@
 //
 // Offline cache service worker for the Online To Do List PWA.
 //
-// This file is a cache-first service worker. It caches the app shell (HTML, CSS, JS, manifest,
-// and icons) on install, and serves those cached assets in preference to network requests.
+// This file is a cache-first service worker for all assets except the HTML shell. The app shell
+// (index.html and the root path) is network-first, so a deployed update lands on the next load
+// without a manual cache clear; everything else (CSS, JS, manifest, icons) is served from the
+// cache first and refreshed in the background by the install/activate cycle.
 //
 // When the app is updated, the CACHE_NAME string should be bumped to invalidate the old cache
 // and force the new assets to be downloaded.
@@ -185,13 +187,27 @@
 //       (which moves the auth reload into the onAuthStateChange listener
 //       to fix the sign-in race condition).
 //
+// 1.21 — Network-first HTML shell and cache bump for the delayed-import /
+//       no-reload round. The fetch listener is split: requests whose
+//       pathname ends in '/' or 'index.html' are network-first (fetch
+//       first, fall back to caches.match('./index.html')), and every other
+//       request stays cache-first. This means a returning user's HTML
+//       shell is always fresh on the next load, so new script and style
+//       references land without a manual cache clear. CACHE_NAME goes from
+//       todo-cache-v30 to todo-cache-v31 to deliver the js/ui.js change
+//       (delayed import sync loop, no reloads from password sign-in or
+//       the sync bar) and the js/sync.js change (no auto-reload on
+//       SIGNED_IN).
+//
 // ================================================================================================
 //
 // === ADDED ===
 //
 // - Initial creation. Implements the core PWA offline functionality.
-//
-//
+// - Network-first branch in the fetch listener for the HTML shell: URL
+//   pathnames ending in '/' or 'index.html' bypass the cache on the happy
+//   path and fall back to caches.match('./index.html') only when the
+//   network fetch rejects. See 1.21 above.
 //
 // ================================================================================================
 //
@@ -319,10 +335,22 @@
 //   dispatches sync events for every imported task, and the auto-reload on
 //   sign-in has been moved into the onAuthStateChange listener to fix the
 //   race condition.
+// - The HTML shell could be pinned to a stale cache entry, so a deployed
+//   index.html change would not reach a returning user until they cleared
+//   storage or the cache name was bumped. The fetch listener now handles
+//   pathname '/' and 'index.html' requests network-first, falling back to
+//   caches.match('./index.html') only when the network fetch rejects. All
+//   other assets stay cache-first.
+// - Bumped CACHE_NAME from `todo-cache-v30` to `todo-cache-v31` so browsers
+//   fetch the delayed-import / no-reload round: js/ui.js (import loop with
+//   150ms spacing, no reload from password sign-in, no reload from the sync
+//   bar) and js/sync.js (no auto-reload on SIGNED_IN). Combined with the
+//   new network-first HTML shell, returning clients pick up these fixes on
+//   the next load even though the shell is no longer cached.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v30';
+const CACHE_NAME = 'todo-cache-v31';
 
 const ASSETS_TO_CACHE = [
   './',
@@ -365,21 +393,26 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: cache-first strategy
+// Fetch: network-first for index.html, cache-first for everything else
 self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url);
+
+  // Always fetch the HTML shell from the network so updates land immediately
+  if (url.pathname.endsWith('/') || url.pathname.endsWith('index.html')) {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match('./index.html'))
+    );
+    return;
+  }
+
+  // Cache-first for all other assets
   event.respondWith(
     caches.match(event.request).then((response) => {
-      // Return cached version if found
-      if (response) {
-        return response;
-      }
-      // Otherwise fetch from network
+      if (response) return response;
       return fetch(event.request).then((networkResponse) => {
-        // Don't cache non-successful responses or non-GET requests
         if (!networkResponse || networkResponse.status !== 200 || event.request.method !== 'GET') {
           return networkResponse;
         }
-        // Cache the new asset
         const responseToCache = networkResponse.clone();
         caches.open(CACHE_NAME).then((cache) => {
           cache.put(event.request, responseToCache);
