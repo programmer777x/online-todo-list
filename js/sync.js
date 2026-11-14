@@ -128,6 +128,10 @@
 //         flush before forcing a page reload. This supports the new
 //         sync-button behavior, which flushes the queue and then reloads
 //         to ensure fresh data from Supabase.
+// v1.13 - Auto-reload on sign-in. Added logic to initSync() to reload the
+//         page immediately after detecting a session, if the sessionStorage
+//         flag 'hasSynced' is not set. This prevents the race condition where
+//         the UI misses the auth event and ensures fresh data is loaded.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -165,6 +169,9 @@
 //   Ensures the UI is always notified when a fetch completes. See v1.11.
 // - window.sync.processOfflineQueue() — exposes the queue flush so the UI
 //   can call it before a page reload. See v1.12.
+// - sessionStorage check in initSync(): reloads the page if 'hasSynced' is
+//   not set, preventing the UI from missing the auth event on sign-in.
+//   See v1.13.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -252,6 +259,10 @@
 //   'sync-state-changed' to update its timestamp and clear the spinner,
 //   but fetchRemoteState() and syncNow() never fired that event. v1.11
 //   dispatches it at the end of fetchRemoteState() and inside syncNow().
+// - Sign-in did not auto-reload, causing the UI to miss cloud data. v1.13
+//   moves the reload trigger into initSync() where the session is first
+//   detected, avoiding a race condition with the UI listener. It uses
+//   sessionStorage to ensure it only reloads once per login.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -281,6 +292,14 @@ async function initSync() {
         
         if (currentSession) {
             console.log("Sync: User is signed in.");
+            
+            // If we just logged in and haven't reloaded yet, force a reload
+            if (!sessionStorage.getItem('hasSynced')) {
+                sessionStorage.setItem('hasSynced', 'true');
+                window.location.reload();
+                return;
+            }
+
             await syncNow();
             // Fire event immediately on load so the UI updates
             window.dispatchEvent(new CustomEvent('supabase-auth-changed', { detail: { session: currentSession } }));
