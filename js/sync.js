@@ -137,6 +137,14 @@
 //         the SIGNED_IN event). This ensures the reload happens exactly
 //         once per login, regardless of whether the session is established
 //         on page load or later. The sessionStorage guard remains.
+// v1.15 - Remove auto-reload on sign-in. The SIGNED_IN branch of the
+//         onAuthStateChange listener no longer sets the 'hasSynced' flag or
+//         calls window.location.reload(). It now runs processOfflineQueue()
+//         and fetchRemoteState() directly, so the UI updates in place via
+//         the 'supabase-auth-changed' and 'sync-state-changed' events those
+//         functions (and their callers) already dispatch. This pairs with
+//         the ui.js 1.18 change that drops the reload from the password
+//         sign-in handler and the sync status bar.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -179,6 +187,10 @@
 //   See v1.13.
 // - Reload logic moved into the onAuthStateChange listener for the SIGNED_IN
 //   event. See v1.14.
+// - Removal of the sessionStorage 'hasSynced' guard and the
+//   window.location.reload() call from the SIGNED_IN branch of the
+//   onAuthStateChange listener. The signed-in path now falls straight
+//   through to processOfflineQueue() and fetchRemoteState(). See v1.15.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -274,6 +286,12 @@
 //   could still miss the event if the session resolved later. v1.14 moves
 //   it into the onAuthStateChange listener for the SIGNED_IN event,
 //   guaranteeing exactly one reload per login.
+// - The auto-reload on sign-in wiped local UI state (open editors, scroll
+//   position, search box) and made every sign-in feel like a full app
+//   restart. v1.15 removes the reload entirely and lets the auth and sync
+//   events update the UI in place. The SIGNED_IN branch now simply falls
+//   through to processOfflineQueue() and fetchRemoteState(), which already
+//   dispatch the events the header button and sync status bar listen for.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -293,11 +311,6 @@ async function initSync() {
             window.dispatchEvent(new CustomEvent('supabase-auth-changed', { detail: { session } }));
             
             if (session) {
-                if (event === 'SIGNED_IN' && !sessionStorage.getItem('hasSynced')) {
-                    sessionStorage.setItem('hasSynced', 'true');
-                    window.location.reload();
-                    return;
-                }
                 processOfflineQueue();
                 fetchRemoteState();
             }
