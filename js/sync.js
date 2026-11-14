@@ -132,6 +132,11 @@
 //         page immediately after detecting a session, if the sessionStorage
 //         flag 'hasSynced' is not set. This prevents the race condition where
 //         the UI misses the auth event and ensures fresh data is loaded.
+// v1.14 - Move auto-reload to auth listener. The initial getSession() check
+//         was moved into the onAuthStateChange listener (specifically for
+//         the SIGNED_IN event). This ensures the reload happens exactly
+//         once per login, regardless of whether the session is established
+//         on page load or later. The sessionStorage guard remains.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -172,6 +177,8 @@
 // - sessionStorage check in initSync(): reloads the page if 'hasSynced' is
 //   not set, preventing the UI from missing the auth event on sign-in.
 //   See v1.13.
+// - Reload logic moved into the onAuthStateChange listener for the SIGNED_IN
+//   event. See v1.14.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -263,6 +270,10 @@
 //   moves the reload trigger into initSync() where the session is first
 //   detected, avoiding a race condition with the UI listener. It uses
 //   sessionStorage to ensure it only reloads once per login.
+// - The reload in v1.13 was inside the initial getSession() block, which
+//   could still miss the event if the session resolved later. v1.14 moves
+//   it into the onAuthStateChange listener for the SIGNED_IN event,
+//   guaranteeing exactly one reload per login.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -275,14 +286,20 @@ let currentSession = null;
 async function initSync() {
     try {
         // Listen for auth changes (login, logout, token refresh)
-        supabaseClient.auth.onAuthStateChange((_event, session) => {
+        supabaseClient.auth.onAuthStateChange((event, session) => {
             currentSession = session;
             
             // Tell the UI to update the button
             window.dispatchEvent(new CustomEvent('supabase-auth-changed', { detail: { session } }));
             
             if (session) {
-                syncNow();
+                if (event === 'SIGNED_IN' && !sessionStorage.getItem('hasSynced')) {
+                    sessionStorage.setItem('hasSynced', 'true');
+                    window.location.reload();
+                    return;
+                }
+                processOfflineQueue();
+                fetchRemoteState();
             }
         });
 
@@ -292,14 +309,6 @@ async function initSync() {
         
         if (currentSession) {
             console.log("Sync: User is signed in.");
-            
-            // If we just logged in and haven't reloaded yet, force a reload
-            if (!sessionStorage.getItem('hasSynced')) {
-                sessionStorage.setItem('hasSynced', 'true');
-                window.location.reload();
-                return;
-            }
-
             await syncNow();
             // Fire event immediately on load so the UI updates
             window.dispatchEvent(new CustomEvent('supabase-auth-changed', { detail: { session: currentSession } }));
