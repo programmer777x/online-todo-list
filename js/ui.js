@@ -125,6 +125,12 @@
 //        page load if a sync already occurred before the listener was
 //        attached.
 //
+// 1.12 — List rename sync fix. handleListRename() now explicitly
+//        dispatches a 'sync-list-change' event with the 'update' operation
+//        so sync.js can push the new name to Supabase. Previously, renaming
+//        a list saved locally but never triggered the mutation hook,
+//        leaving the cloud DB out of date.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -174,6 +180,8 @@
 //   from syncNow(). See the 1.10 revision entry.
 // - Initial sync-state-changed dispatch in wireSyncStatusBar(). See the
 //   1.11 revision entry.
+// - 'sync-list-change' dispatch in handleListRename(). See the 1.12
+//   revision entry.
 //
 // ================================================================================================
 //
@@ -280,6 +288,11 @@
 // - The status bar initial render could lag behind a sync that completed
 //   before the listener was attached. Dispatches a fake event on setup. See
 //   the 1.11 revision entry.
+// - Renaming a list did not sync to Supabase. handleListRename() saved the
+//   new name to localStorage but never dispatched a 'sync-list-change'
+//   event, so sync.js had no idea the name changed and never pushed the
+//   update. The handler now dispatches the event with op: 'update'. See the
+//   1.12 revision entry.
 //
 // ================================================================================================
 
@@ -456,6 +469,12 @@ function handleListRename() {
     finalName = `${name} (${n})`;
   }
   list.name = finalName;
+  
+  // Broadcast the change to sync.js
+  window.dispatchEvent(new CustomEvent('sync-list-change', { 
+    detail: { op: 'update', list: { id: list.id, name: list.name, created_at: Date.now() } } 
+  }));
+  
   saveState();
   renderListSwitcher();
 }
