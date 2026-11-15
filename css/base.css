@@ -24,6 +24,8 @@
     14. Responsive
     15. Drag-to-reorder
     16. Auth UI
+    17. Undo snackbar
+    18. FAB menu (more-actions speed-dial)
 
    Responsive strategy:
      - Default (all widths): the ⋯ button and its menu are VISIBLE, inline actions are VISIBLE.
@@ -260,41 +262,51 @@ body {
 
 /* ================================================================================================
    4.5 SYNC STATUS BAR
+   ------------------------------------------------------------------------------------------------
+   Item 3 restyle: now a pill button matching the list-switcher / auth-button treatment.
+   Sits under the header (not in the header row). The [hidden] rule below is load-bearing:
+   without it, `bar.hidden = true` in ui.js sets the attribute but `.sync-status-bar`'s own
+   `display: inline-flex` overrides the UA `[hidden] { display: none }`, so the bar stays
+   visible when signed out. Do not remove.
    ================================================================================================ */
 
 .sync-status-bar {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
+  align-self: center;
+  max-width: 100%;
+  padding: var(--space-2) var(--space-4);
   margin-top: calc(var(--space-2) * -1); /* Tighten gap below header */
   font-family: inherit;
   font-size: 0.8125rem;
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-pill);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  backdrop-filter: blur(var(--panel-blur));
+  -webkit-backdrop-filter: blur(var(--panel-blur));
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
-/* The `hidden` attribute must win over `display: flex` above. Without this rule,
-   `bar.hidden = true` in ui.js sets the attribute but the bar stays visible, because
-   an author `display` declaration overrides the UA `[hidden] { display: none }` rule. */
+/* The `hidden` attribute must win over the author `display` above. Do not remove. */
 .sync-status-bar[hidden] {
   display: none;
 }
 
 .sync-status-bar:hover:not(:disabled) {
   background: var(--card-bg-hover);
-  color: var(--text-secondary);
+  color: var(--text-primary);
+  border-color: var(--accent);
 }
 
 .sync-status-bar:focus-visible {
   outline: none;
   box-shadow: var(--accent-glow);
+  border-color: var(--accent);
 }
 
 .sync-status-bar:disabled {
@@ -321,11 +333,13 @@ body {
 /* Error state text color */
 .sync-status-bar.is-error {
   color: var(--danger);
+  border-color: var(--danger);
 }
 
 .sync-status-bar.is-error:hover:not(:disabled) {
   color: var(--danger);
   background: var(--accent-soft); /* Subtle error highlight */
+  border-color: var(--danger);
 }
 
 /* ================================================================================================
@@ -1336,4 +1350,248 @@ select option {
   background: var(--accent-soft);
   border-radius: var(--radius-sm);
   text-align: center;
+}
+
+/* ================================================================================================
+   17. UNDO SNACKBAR (Item 1)
+   ------------------------------------------------------------------------------------------------
+   Bottom-center floating banner shown by ui.js after each history-recorded action. Hidden by
+   default; the JS sets `hidden = false` to show it and starts a 5s auto-dismiss timer. The
+   banner is a sibling of .app-shell, so it is not affected by the shell's flex layout.
+   ================================================================================================ */
+
+.undo-snackbar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 72px);
+  transform: translateX(-50%);
+  z-index: 5000;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: min(420px, calc(100vw - 32px));
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  background: var(--menu-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--radius-pill);
+  box-shadow: var(--menu-shadow);
+  font-size: 0.875rem;
+  animation: undo-snackbar-in var(--transition-med) both;
+}
+
+.undo-snackbar[hidden] {
+  display: none;
+}
+
+@keyframes undo-snackbar-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+.undo-snackbar-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.undo-snackbar-button {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-3);
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-text);
+  font-family: inherit;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.undo-snackbar-button:hover {
+  background: var(--accent-hover);
+}
+
+.undo-snackbar-button:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+}
+
+/* ================================================================================================
+   18. FAB MENU (Item 2)
+   ------------------------------------------------------------------------------------------------
+   The ⋯ button bottom-right opens #fab-menu-panel above it. Panel holds the Recent Changes
+   list rendered by ui.js from window.store.loadHistory(). The panel has a max-height and
+   vertical scroll so a full 20-entry history does not push off-screen.
+
+   Mobile-only? No — the FAB is visible at every width by design (undo is a daily action and
+   the header is already crowded on desktop too). Only the inline task action controls have a
+   desktop/mobile split.
+   ================================================================================================ */
+
+.fab-menu-button {
+  position: fixed;
+  right: calc(env(safe-area-inset-right, 0px) + 16px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  z-index: 5001;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--panel-border);
+  border-radius: 50%;
+  background: var(--menu-bg);
+  color: var(--text-primary);
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--menu-shadow);
+  backdrop-filter: blur(var(--panel-blur));
+  -webkit-backdrop-filter: blur(var(--panel-blur));
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.fab-menu-button:hover {
+  background: var(--card-bg-hover);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.fab-menu-button:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+}
+
+.fab-menu-button[aria-expanded="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+  transform: rotate(90deg);
+}
+
+.fab-menu-panel {
+  position: fixed;
+  right: calc(env(safe-area-inset-right, 0px) + 16px);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 80px);
+  z-index: 5001;
+  width: min(340px, calc(100vw - 32px));
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--menu-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--menu-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--menu-shadow);
+  backdrop-filter: blur(var(--panel-blur));
+  -webkit-backdrop-filter: blur(var(--panel-blur));
+  animation: fab-menu-in var(--transition-med) both;
+}
+
+.fab-menu-panel[hidden] {
+  display: none;
+}
+
+@keyframes fab-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.fab-menu-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.fab-menu-heading {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.history-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  transition: background var(--transition-fast);
+}
+
+.history-item:hover {
+  background: var(--card-bg-hover);
+}
+
+.history-item-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-undo {
+  flex: 0 0 auto;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.history-item-undo:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.history-item-undo:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+}
+
+.history-empty {
+  margin: 0;
+  padding: var(--space-3) 0;
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  text-align: center;
+  font-style: italic;
 }
