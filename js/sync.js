@@ -145,6 +145,21 @@
 //         functions (and their callers) already dispatch. This pairs with
 //         the ui.js 1.18 change that drops the reload from the password
 //         sign-in handler and the sync status bar.
+// v1.16 - Auto-sync and re-render on sign-in. The SIGNED_IN branch of the
+//         onAuthStateChange listener now awaits syncNow() -- the same
+//         function the sync bar calls -- instead of firing
+//         processOfflineQueue() and fetchRemoteState() fire-and-forget.
+//         After syncNow() resolves, it explicitly calls renderListSwitcher()
+//         and render() so the user's saved cloud lists and tasks appear on
+//         sign-in without a manual sync tap. This covers both sign-in
+//         methods (password and magic-link). On a syncNow() failure it
+//         dispatches 'sync-state-changed' after resetting state, which the
+//         ui.js showError() path (added this round) can reflect. The
+//         load-time path for a returning user with an existing session is
+//         unchanged -- it still awaits syncNow() before the
+//         'supabase-auth-changed' dispatch. First-sign-in migration
+//         (cloud empty -> upload local data) is unchanged; it still runs
+//         inside fetchRemoteState() via syncNow().
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -191,6 +206,11 @@
 //   window.location.reload() call from the SIGNED_IN branch of the
 //   onAuthStateChange listener. The signed-in path now falls straight
 //   through to processOfflineQueue() and fetchRemoteState(). See v1.15.
+// - Async SIGNED_IN handler in initSync(): awaits syncNow(), then calls
+//   renderListSwitcher() and render() to bring the cloud lists and tasks
+//   onto the screen without a manual sync tap. A failed syncNow() still
+//   flows through the existing 'sync-state-changed' dispatch, which the
+//   ui.js showError() path consumes. See v1.16.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -292,6 +312,13 @@
 //   events update the UI in place. The SIGNED_IN branch now simply falls
 //   through to processOfflineQueue() and fetchRemoteState(), which already
 //   dispatch the events the header button and sync status bar listen for.
+// - Sign-in did not update the visible list switcher or task list. v1.15
+//   removed the reload, and the event-driven updates only touch the header
+//   button and sync bar -- not the actual data on screen. The SIGNED_IN
+//   branch now awaits syncNow() and then explicitly calls
+//   renderListSwitcher() and render(), so the user's saved cloud lists and
+//   tasks appear on sign-in without a manual tap. Applies to both password
+//   and magic-link sign-in. See v1.16.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -304,15 +331,19 @@ let currentSession = null;
 async function initSync() {
     try {
         // Listen for auth changes (login, logout, token refresh)
-        supabaseClient.auth.onAuthStateChange((event, session) => {
+        supabaseClient.auth.onAuthStateChange(async (event, session) => {
             currentSession = session;
             
             // Tell the UI to update the button
             window.dispatchEvent(new CustomEvent('supabase-auth-changed', { detail: { session } }));
             
             if (session) {
-                processOfflineQueue();
-                fetchRemoteState();
+                // Await the same sync path the sync bar uses, then
+                // explicitly re-render so the user's saved cloud lists
+                // and tasks appear without a manual sync tap.
+                await syncNow();
+                if (typeof renderListSwitcher === 'function') renderListSwitcher();
+                if (typeof render === 'function') render();
             }
         });
 
