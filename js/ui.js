@@ -186,6 +186,19 @@
 //        re-rendered to "Last synced {old time}" and the user had no
 //        indication it failed.
 //
+// 1.20 — Service worker update check on sync bar tap. After a successful
+//        syncNow(), the click handler now calls
+//        navigator.serviceWorker.getRegistration() then
+//        registration.update() to look for a waiting worker. If one is
+//        found, updateAvailable is set to true and renderBar() shows
+//        "Update available — tap to reload". A second tap while
+//        updateAvailable is true calls window.location.reload() to pick
+//        up the new worker. Both the getRegistration() and update() calls
+//        are guarded by a 'serviceWorker' in navigator check, so file://
+//        still works with no crash when the worker is absent. The
+//        automatic-reload path is deliberately not used — the user may
+//        be mid-typing.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -261,6 +274,14 @@
 // - showError() call in the sync status bar click handler when
 //   window.sync.syncNow() returns false or throws. See the 1.19 revision
 //   entry.
+// - Service worker update check in the sync status bar click handler:
+//   after a successful syncNow(), calls
+//   navigator.serviceWorker.getRegistration() then registration.update(),
+//   and sets updateAvailable = true if a waiting or installing worker is
+//   found. Tapping the bar while updateAvailable is true calls
+//   window.location.reload(). The whole update-check path is guarded by
+//   'serviceWorker' in navigator so file:// does not crash. See the 1.20
+//   revision entry.
 //
 // ================================================================================================
 //
@@ -417,6 +438,12 @@
 //   know the sync failed. It now calls showError() on either failure path,
 //   which paints "Sync failed — tap to retry · Last synced {time}" and
 //   leaves the bar tappable for a retry. See the 1.19 revision entry.
+// - The sync bar could never show the "Update available — tap to reload"
+//   state because nothing ever set updateAvailable to true, and nothing
+//   called navigator.serviceWorker.getRegistration() or
+//   registration.update(). The click handler now runs both after a
+//   successful syncNow() and flips the flag when a waiting or installing
+//   worker is present. See the 1.20 revision entry.
 //
 // ================================================================================================
 
@@ -1132,6 +1159,19 @@ function wireSyncStatusBar() {
     bar.disabled = false;
   }
 
+  async function checkForUpdate() {
+    if (!('serviceWorker' in navigator)) return false;
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (!registration) return false;
+      await registration.update();
+      return !!(registration.waiting || registration.installing);
+    } catch (e) {
+      console.warn('Service worker update check failed:', e);
+      return false;
+    }
+  }
+
   // Initial render
   renderBar();
 
@@ -1152,6 +1192,12 @@ function wireSyncStatusBar() {
     const session = window.sync ? window.sync.getSession() : null;
     if (!session) return; // Do nothing if signed out
 
+    // If we already know an update is waiting, a tap reloads immediately.
+    if (updateAvailable) {
+      window.location.reload();
+      return;
+    }
+
     syncing = true;
     renderBar();
 
@@ -1169,6 +1215,14 @@ function wireSyncStatusBar() {
     
     if (!ok) {
       showError();
+      return;
+    }
+
+    // After a successful sync, check for a waiting service worker update.
+    const hasUpdate = await checkForUpdate();
+    if (hasUpdate) {
+      updateAvailable = true;
+      renderBar();
       return;
     }
     
