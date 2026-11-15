@@ -10,6 +10,7 @@
 //   - Creating, deleting, renaming, and switching between named lists.
 //   - Adding, removing, moving, editing, and reordering tasks and subtasks.
 //   - Building the derived render tree (numbering is computed at render time, never stored).
+//   - Recording undoable actions in a capped history list and exposing undo APIs.
 //
 // It assumes `config.js` has been loaded and its constants are available globally.
 //
@@ -46,6 +47,21 @@
 //       handleListRename in ui.js calling saveState without a broadcast,
 //       to be wired in a follow-up if needed.
 //
+// 1.4 — Two-layer undo history. Added HISTORY_KEY ('todolist.v1.history')
+//       with a cap of HISTORY_MAX (20) entries. recordHistory(entry) is
+//       called from each mutation function just before the state change
+//       lands, storing the inverse operation so the UI can revert that
+//       one action. undoLast() pops and applies the most recent entry;
+//       undoHistoryEntry(id) applies and removes one specific entry by
+//       id (used by the recent-changes list's per-row Undo). Both go
+//       through the existing store mutations so the undo syncs like any
+//       other change. addTask gained a historyOpts argument so bulk adds
+//       (paste, import) can suppress history recording — they opt in
+//       per call. loadHistory() / saveHistory() persist the list; a
+//       corrupt parse falls back to an empty list rather than crashing.
+//       Delete-list undo is explicitly out of scope (the dialog keeps
+//       its "This cannot be undone." text).
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -74,6 +90,16 @@
 //   reorderTask emits { op: 'update', task } per reordered sibling;
 //   createList emits { op: 'insert', list }; deleteList emits
 //   { op: 'delete', list: { id } }.
+// - HISTORY_KEY constant, HISTORY_MAX cap, and a lazily-loaded history
+//   array. loadHistory() parses from localStorage and falls back to []
+//   on a corrupt parse; saveHistory() writes it back. recordHistory()
+//   pushes a new entry (capped to HISTORY_MAX by trimming the oldest)
+//   and persists. undoLast() pops and applies the newest entry;
+//   undoHistoryEntry(id) applies and removes one specific entry. Every
+//   mutation function calls recordHistory() before its state change.
+//   addTask takes an optional historyOpts argument so bulk adds (paste,
+//   import) can suppress recording. Exposed on window.store alongside
+//   hydrateFromRemote.
 //
 // ================================================================================================
 //
@@ -342,6 +368,167 @@ function saveState() {
 
 
 /* ================================================================================================
+   UNDO HISTORY
+   ------------------------------------------------------------------------------------------------
+   A capped list of the last HISTORY_MAX undoable actions, persisted in localStorage.
+   Each entry is { id, kind, summary, undoAction } where undoAction is the inverse the UI
+   applies via undoLast() or undoHistoryEntry(id).
+
+   Delete-LIST undo is out of scope for this batch — the delete-list dialog keeps its
+   "This cannot be undone." text. Task-level delete IS covered.
+   ================================================================================================ */
+
+const HISTORY_KEY = 'todolist.v1.history';
+const HISTORY_MAX = 20;
+
+let _history = null;
+
+function loadHistory() {
+  if (_history !== null) return _history;
+  try {
+    const raw = localStorage.getItem(HISTORY_KEY);
+    if (!raw) {
+      _history = [];
+      return _history;
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      _history = [];
+      return _history;
+    }
+    _history = parsed.filter((e) => e && typeof e === 'object' && typeof e.id === 'string' && typeof e.kind === 'string');
+    return _history;
+  } catch (err) {
+    console.warn('Could not read undo history; starting empty.', err);
+    _history = [];
+    return _history;
+  }
+}
+
+function saveHistory() {
+  if (_history === null) return;
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(_history));
+  } catch (err) {
+    console.warn('Could not write undo history.', err);
+  }
+}
+
+function recordHistory(entry) {
+  const list = loadHistory();
+  const item = {
+    id: generateId(),
+    kind: entry.kind || 'change',
+    summary: entry.summary || '',
+    undoAction: entry.undoAction || null,
+    timestamp: Date.now(),
+  };
+  list.push(item);
+  if (list.length > HISTORY_MAX) {
+    list.splice(0, list.length - HISTORY_MAX);
+  }
+  _history = list;
+  saveHistory();
+  return item;
+}
+
+function applyUndoAction(action) {
+  if (!action || typeof action !== 'object') return false;
+  const list = state.lists[state.activeListId];
+  if (!list) return false;
+
+  switch (action.op) {
+    case 'restore-task': {
+      if (!action.task) return false;
+      if (list.tasks.some((t) => t.id === action.task.id)) return false;
+      list.tasks.push(action.task);
+      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'insert', task: { ...action.task, listId: state.activeListId } } }));
+      saveState();
+      return true;
+    }
+    case 'set-text': {
+      const t = list.tasks.find((x) => x.id === action.taskId);
+      if (!t) return false;
+      t.text = action.text;
+      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId: state.activeListId } } }));
+      saveState();
+      return true;
+    }
+    case 'set-done': {
+      const t = list.tasks.find((x) => x.id === action.taskId);
+      if (!t) return false;
+      t.done = Boolean(action.done);
+      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId: state.activeListId } } }));
+      saveState();
+      return true;
+    }
+    case 'set-move': {
+      const t = list.tasks.find((x) => x.id === action.taskId);
+      if (!t) return false;
+      t.section = action.section;
+      t.parentId = action.parentId || null;
+      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId: state.activeListId } } }));
+      saveState();
+      return true;
+    }
+    case 'delete-task': {
+      const t = list.tasks.find((x) => x.id === action.taskId);
+      if (!t) return false;
+      removeTaskSilent(action.taskId);
+      return true;
+    }
+    case 'reorder': {
+      // Restore a full snapshot of {id -> createdAt} for the affected siblings.
+      if (!Array.isArray(action.siblings)) return false;
+      for (const { id, createdAt } of action.siblings) {
+        const t = list.tasks.find((x) => x.id === id);
+        if (t) t.createdAt = createdAt;
+      }
+      for (const { id, createdAt } of action.siblings) {
+        const t = list.tasks.find((x) => x.id === id);
+        if (!t) continue;
+        window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId: state.activeListId } } }));
+      }
+      saveState();
+      return true;
+    }
+    default:
+      return false;
+  }
+}
+
+function undoHistoryEntry(id) {
+  const list = loadHistory();
+  const idx = list.findIndex((e) => e.id === id);
+  if (idx === -1) return false;
+  const entry = list[idx];
+  const ok = applyUndoAction(entry.undoAction);
+  if (!ok) return false;
+  list.splice(idx, 1);
+  _history = list;
+  saveHistory();
+  return true;
+}
+
+function undoLast() {
+  const list = loadHistory();
+  if (list.length === 0) return false;
+  const entry = list[list.length - 1];
+  const ok = applyUndoAction(entry.undoAction);
+  if (!ok) return false;
+  list.pop();
+  _history = list;
+  saveHistory();
+  return true;
+}
+
+function clearHistory() {
+  _history = [];
+  saveHistory();
+}
+
+
+/* ================================================================================================
    TASK HELPERS
    ================================================================================================ */
 
@@ -381,7 +568,12 @@ function buildChildNodes(tasks, parentId, parentNumber) {
   return nodes;
 }
 
-function addTask(text, section, parentId) {
+/**
+ * Add a task. `historyOpts.record` (default true) controls whether an undo entry is
+ * recorded. Bulk adds (paste, import) pass `{ record: false }` so one bulk action doesn't
+ * flood the history list. The "Add task" from quick-add / section + buttons leaves it on.
+ */
+function addTask(text, section, parentId, historyOpts) {
   const trimmed = String(text).trim();
   if (!trimmed) return null;
 
@@ -394,13 +586,26 @@ function addTask(text, section, parentId) {
     createdAt: Date.now(),
   };
 
+  const record = !historyOpts || historyOpts.record !== false;
+  if (record) {
+    recordHistory({
+      kind: 'add',
+      summary: `Added "${trimmed}"`,
+      undoAction: { op: 'delete-task', taskId: task.id },
+    });
+  }
+
   activeList().tasks.push(task);
   window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'insert', task: { ...task, listId: state.activeListId } } }));
   saveState();
   return task;
 }
 
-function removeTask(id) {
+/**
+ * Internal remove without recording history or dispatching a delete event — used by
+ * the undo layer's own `add` reversal so an undo does not generate a new history entry.
+ */
+function removeTaskSilent(id) {
   const list = activeList();
   const toRemove = new Set([id]);
   let grew = true;
@@ -414,8 +619,40 @@ function removeTask(id) {
     }
   }
   list.tasks = list.tasks.filter((t) => !toRemove.has(t.id));
-  toRemove.forEach(id => {
-    window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'delete', task: { id } } }));
+  toRemove.forEach((rid) => {
+    window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'delete', task: { id: rid } } }));
+  });
+  saveState();
+}
+
+function removeTask(id) {
+  const list = activeList();
+  const snapshot = list.tasks.find((t) => t.id === id);
+  if (!snapshot) return;
+
+  // Record undo with a deep snapshot of the removed subtree so undo can restore it intact.
+  const toRemove = new Set([id]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const t of list.tasks) {
+      if (t.parentId && toRemove.has(t.parentId) && !toRemove.has(t.id)) {
+        toRemove.add(t.id);
+        grew = true;
+      }
+    }
+  }
+  const removed = list.tasks.filter((t) => toRemove.has(t.id)).map((t) => ({ ...t }));
+
+  recordHistory({
+    kind: 'delete',
+    summary: `Deleted "${snapshot.text}"`,
+    undoAction: { op: 'restore-many', tasks: removed },
+  });
+
+  list.tasks = list.tasks.filter((t) => !toRemove.has(t.id));
+  toRemove.forEach((rid) => {
+    window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'delete', task: { id: rid } } }));
   });
   saveState();
 }
@@ -423,6 +660,12 @@ function removeTask(id) {
 function toggleDone(id) {
   const task = findTask(id);
   if (!task) return;
+  const previousDone = task.done;
+  recordHistory({
+    kind: 'toggle',
+    summary: `${previousDone ? 'Uncompleted' : 'Completed'} "${task.text}"`,
+    undoAction: { op: 'set-done', taskId: task.id, done: previousDone },
+  });
   task.done = !task.done;
   window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...task, listId: state.activeListId } } }));
   saveState();
@@ -433,6 +676,12 @@ function updateText(id, text) {
   if (!task) return;
   const trimmed = String(text).trim();
   if (!trimmed) return;
+  if (trimmed === task.text) return;
+  recordHistory({
+    kind: 'edit',
+    summary: `Edited "${task.text}"`,
+    undoAction: { op: 'set-text', taskId: task.id, text: task.text },
+  });
   task.text = trimmed;
   window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...task, listId: state.activeListId } } }));
   saveState();
@@ -442,6 +691,12 @@ function moveTask(id, section) {
   if (!SECTIONS.includes(section)) return;
   const task = findTask(id);
   if (!task) return;
+  if (task.section === section) return;
+  recordHistory({
+    kind: 'move',
+    summary: `Moved "${task.text}" to ${section.toUpperCase()}`,
+    undoAction: { op: 'set-move', taskId: task.id, section: task.section, parentId: task.parentId },
+  });
   task.section = section;
   window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...task, listId: state.activeListId } } }));
   saveState();
@@ -490,11 +745,23 @@ function reorderTask(taskId, targetId, position) {
   const sameOrder = withoutDragged.every((t, i) => t.id === siblings[i].id);
   if (sameOrder) return false;
 
+  // Capture a snapshot of the old createdAt mapping for undo.
+  const before = siblings.map((t) => ({ id: t.id, createdAt: t.createdAt }));
+
   // Reassign createdAt timestamps to match the new order. Use a base far enough in the past
   // that it never collides with existing createdAt values (which come from Date.now()).
   // We assign strictly increasing timestamps starting at 1 so the new order is unambiguous.
   withoutDragged.forEach((t, i) => {
     t.createdAt = i + 1;
+  });
+
+  recordHistory({
+    kind: 'reorder',
+    summary: `Reordered "${dragged.text}"`,
+    undoAction: { op: 'reorder', siblings: before },
+  });
+
+  withoutDragged.forEach((t) => {
     window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId: state.activeListId } } }));
   });
   saveState();
@@ -517,6 +784,16 @@ function reparentTask(taskId, newParentId, newSection) {
   // Prevent making a task its own parent or creating a cycle (though the UI prevents this,
   // it's good practice for the store to be defensive).
   if (taskId === newParentId) return false;
+
+  const previousParent = task.parentId;
+  const previousSection = task.section;
+  if (previousParent === (newParentId || null) && previousSection === newSection) return false;
+
+  recordHistory({
+    kind: 'move',
+    summary: `Moved "${task.text}"`,
+    undoAction: { op: 'set-move', taskId: task.id, section: previousSection, parentId: previousParent },
+  });
 
   task.parentId = newParentId || null;
   task.section = newSection;
@@ -601,3 +878,8 @@ function hydrateFromRemote(remoteLists, remoteTasks) {
 // so this bridge is required.
 window.store = window.store || {};
 window.store.hydrateFromRemote = hydrateFromRemote;
+window.store.undoLast = undoLast;
+window.store.undoHistoryEntry = undoHistoryEntry;
+window.store.loadHistory = loadHistory;
+window.store.clearHistory = clearHistory;
+window.store.recordHistory = recordHistory;
