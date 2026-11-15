@@ -280,6 +280,13 @@ body {
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
+/* The `hidden` attribute must win over `display: flex` above. Without this rule,
+   `bar.hidden = true` in ui.js sets the attribute but the bar stays visible, because
+   an author `display` declaration overrides the UA `[hidden] { display: none }` rule. */
+.sync-status-bar[hidden] {
+  display: none;
+}
+
 .sync-status-bar:hover:not(:disabled) {
   background: var(--card-bg-hover);
   color: var(--text-secondary);
