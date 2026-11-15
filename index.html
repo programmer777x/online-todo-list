@@ -71,6 +71,15 @@
           >🗑</button>
         </div>
 
+        <!-- ---- Undo (Item 1) ---- -->
+        <button
+          type="button"
+          id="undo-button"
+          class="icon-button"
+          aria-label="Undo last action"
+          title="Undo last action"
+        >↩</button>
+
         <!-- ---- Auth Button ---- -->
         <button type="button" id="auth-button" class="button auth-button">Sign in to sync</button>
 
@@ -208,6 +217,44 @@
       </div>
       <p class="footer-note">Saved locally in your browser. No account, no server.</p>
     </footer>
+
+    <!-- ============================ UNDO SNACKBAR (Item 1) ============================ -->
+    <div
+      id="undo-snackbar"
+      class="undo-snackbar"
+      role="status"
+      aria-live="polite"
+      hidden
+    >
+      <span id="undo-snackbar-text" class="undo-snackbar-text">Action applied</span>
+      <button type="button" id="undo-snackbar-button" class="undo-snackbar-button">Undo</button>
+    </div>
+
+    <!-- ============================ EXPANDABLE MENU (Item 2) ============================ -->
+    <button
+      type="button"
+      id="fab-menu-button"
+      class="fab-menu-button"
+      aria-haspopup="true"
+      aria-expanded="false"
+      aria-controls="fab-menu-panel"
+      aria-label="More actions"
+      title="More actions"
+    >⋯</button>
+
+    <div
+      id="fab-menu-panel"
+      class="fab-menu-panel"
+      role="menu"
+      aria-label="More actions"
+      hidden
+    >
+      <div class="fab-menu-section">
+        <h2 class="fab-menu-heading">Recent changes</h2>
+        <ul id="history-list" class="history-list" role="list"></ul>
+        <p id="history-empty" class="history-empty">No recent changes.</p>
+      </div>
+    </div>
 
     <!-- ============================ AUTH MODAL ============================ -->
     <dialog id="auth-modal" class="auth-modal">
