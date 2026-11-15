@@ -240,6 +240,18 @@
 //       wrap their Supabase call in try/catch, reset the button, and show
 //       a friendly connection message on a network failure — Item 5).
 //
+// 1.26 — Cache bump for the four-item feature batch. CACHE_NAME goes from
+//       todo-cache-v35 to todo-cache-v36 so returning clients fetch the
+//       updated index.html (undo button, undo snackbar, FAB menu shell,
+//       Recent Changes panel), js/store.js (history recording + undo API
+//       with a 20-entry cap persisted under todolist.v1.history),
+//       js/ui.js (undo snackbar on history-recorded, Ctrl+Z / Cmd+Z
+//       support, FAB toggle + tap-outside + Escape, history row rendering
+//       with per-row Undo, and the Item 4 editable password-step email +
+//       updated empty-email copy), and css/base.css (undo snackbar, FAB,
+//       menu, history list styles, and the Item 3 sync-bar pill restyle
+//       that keeps the [hidden] rule intact).
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -435,10 +447,27 @@
 //   bump, returning clients would stay on v34 and neither Item 9 (sync
 //   bar hidden when signed out) nor Item 5 (friendly network-error
 //   message) would reach them.
+// - No undo existed anywhere. Added a two-layer undo (snackbar + Recent
+//   Changes list) backed by js/store.js history recording. See 1.26.
+// - The header grew with every new control. Added a ⋯ FAB menu (bottom-
+//   right) whose first tenant is the Recent Changes list. Sync bar stays
+//   under the header. See 1.26.
+// - The sync bar looked like its own stray section (bare centered muted
+//   text). Restyled as a pill matching the list-switcher / auth-button
+//   treatment, keeping the [hidden] rule. See 1.26.
+// - The password step's email field was locked, so a wrong address typed
+//   on the link step couldn't be fixed before password sign-in. Dropped
+//   the lock and updated the empty-email copy to "Please enter your email
+//   address." See 1.26.
+// - Bumped CACHE_NAME from `todo-cache-v35` to `todo-cache-v36` so browsers
+//   fetch the four-item feature batch: index.html, js/store.js, js/ui.js,
+//   and css/base.css. Without this bump, returning clients would stay on
+//   v35 and none of the undo / menu / pill / editable-email changes would
+//   reach them.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v35';
+const CACHE_NAME = 'todo-cache-v36';
 
 const ASSETS_TO_CACHE = [
   './',
