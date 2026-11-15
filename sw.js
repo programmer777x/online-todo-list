@@ -230,6 +230,16 @@
 //       — tap to retry · Last synced {last good time}") depends on this
 //       bump reaching returning clients.
 //
+// 1.25 — Cache bump for the sync-bar hidden-attribute CSS fix and the
+//       friendly sign-in network-error handling. CACHE_NAME goes from
+//       todo-cache-v34 to todo-cache-v35 so returning clients fetch the
+//       updated css/base.css (adds `.sync-status-bar[hidden] { display:
+//       none; }` so `bar.hidden = true` actually hides the bar instead of
+//       being overridden by the author `display: flex` rule — this was the
+//       Item 9 root cause) and the updated js/ui.js (both sign-in handlers
+//       wrap their Supabase call in try/catch, reset the button, and show
+//       a friendly connection message on a network failure — Item 5).
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -405,10 +415,30 @@
 //   bump, returning clients would stay on v33 where a failed manual sync
 //   still wrote a fresh timestamp and showed the idle label with the
 //   failed-sync time.
+// - The signed-out sync bar was visible because `.sync-status-bar`
+//   declared `display: flex`, which overrode the UA `[hidden] { display:
+//   none }` rule — so `bar.hidden = true` set the attribute and changed
+//   nothing on screen. Added a `.sync-status-bar[hidden] { display: none;
+//   }` rule in css/base.css so the attribute wins when present.
+// - Sign-in network failures were silent and left the button stuck. Both
+//   sign-in handlers awaited the Supabase call without try/catch and only
+//   checked the returned { error } object. A network failure throws
+//   TypeError: Failed to fetch, which propagated as an unhandled rejection
+//   — no message shown, and the "Signing in..." / "Sending..." disabled
+//   state never reset because the reset lines after the await never ran.
+//   Both handlers now catch the throw, reset the button, and write a
+//   friendly connection message into the modal's existing error line.
+//   See 1.25.
+// - Bumped CACHE_NAME from `todo-cache-v34` to `todo-cache-v35` so browsers
+//   fetch the two fixes above: css/base.css (the `[hidden]` rule) and
+//   js/ui.js (the try/catch around both sign-in handlers). Without this
+//   bump, returning clients would stay on v34 and neither Item 9 (sync
+//   bar hidden when signed out) nor Item 5 (friendly network-error
+//   message) would reach them.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v34';
+const CACHE_NAME = 'todo-cache-v35';
 
 const ASSETS_TO_CACHE = [
   './',
