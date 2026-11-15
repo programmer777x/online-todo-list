@@ -160,6 +160,15 @@
 //         'supabase-auth-changed' dispatch. First-sign-in migration
 //         (cloud empty -> upload local data) is unchanged; it still runs
 //         inside fetchRemoteState() via syncNow().
+// v1.17 - Rethrow fetch errors. fetchRemoteState()'s catch block now logs
+//         the failure and then rethrows, so syncNow() sees the error and
+//         returns false instead of writing a fresh success timestamp. The
+//         only caller of fetchRemoteState() is syncNow(), which already
+//         wraps the call in try/catch, so the rethrow is safe. This closes
+//         the Item 1 failure where a manual sync while offline reverted to
+//         the idle label with a freshly stamped time from the failed sync.
+//         A failed sync now leaves the last good timestamp untouched and
+//         the ui.js showError() path paints the retry label as designed.
 // =============================================================================
 // === ADDED ===
 // =============================================================================
@@ -211,6 +220,9 @@
 //   onto the screen without a manual sync tap. A failed syncNow() still
 //   flows through the existing 'sync-state-changed' dispatch, which the
 //   ui.js showError() path consumes. See v1.16.
+// - Rethrow in fetchRemoteState()'s catch block. The error propagates to
+//   syncNow(), which returns false, so the sync bar shows the error state
+//   and the last good timestamp is preserved. See v1.17.
 // =============================================================================
 // === FIXES ===
 // =============================================================================
@@ -319,6 +331,15 @@
 //   renderListSwitcher() and render(), so the user's saved cloud lists and
 //   tasks appear on sign-in without a manual tap. Applies to both password
 //   and magic-link sign-in. See v1.16.
+// - A manual sync while offline silently looked successful. v1.11's
+//   fetchRemoteState() caught the fetch error, logged it, and returned
+//   normally, so syncNow() never saw a failure -- it wrote a fresh success
+//   timestamp and returned true. The sync bar then rendered the idle label
+//   with a time from the failed sync, and the user had no way to know the
+//   sync failed. v1.17 rethrows in fetchRemoteState()'s catch block, so
+//   syncNow() returns false, no timestamp is written, and the sync bar's
+//   showError() path paints the retry label with the last good time. See
+//   v1.17.
 // =============================================================================
 
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -443,6 +464,11 @@ async function fetchRemoteState() {
         }
     } catch (err) {
         console.warn("Sync: Failed to fetch remote state.", err);
+        // Rethrow so syncNow() sees the failure, returns false, and the
+        // sync bar can show the error state instead of a fresh timestamp
+        // from a failed sync.
+        window.dispatchEvent(new CustomEvent('sync-state-changed'));
+        throw err;
     }
     // Tell the UI to update the timestamp or clear the syncing state
     window.dispatchEvent(new CustomEvent('sync-state-changed'));
