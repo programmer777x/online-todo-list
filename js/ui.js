@@ -177,6 +177,15 @@
 //        syncing = false, and re-renders the bar. Inline syncNow()
 //        failures are caught and logged rather than rethrown.
 //
+// 1.19 — Sync bar error state. The click handler now reads the boolean
+//        returned by window.sync.syncNow(). On false or on a thrown
+//        error, it calls the existing showError() helper instead of
+//        falling through to the idle label. showError() already checks
+//        the session before unhiding the bar, so a signed-out user still
+//        sees nothing. Before this change, a failed manual sync silently
+//        re-rendered to "Last synced {old time}" and the user had no
+//        indication it failed.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -248,6 +257,9 @@
 //   a 5s auto-clear). See the 1.18 revision entry.
 // - "go" step pattern in the import loop uses the awaited timeout, so the
 //   main thread stays responsive between dispatches. See the 1.18 revision
+//   entry.
+// - showError() call in the sync status bar click handler when
+//   window.sync.syncNow() returns false or throws. See the 1.19 revision
 //   entry.
 //
 // ================================================================================================
@@ -399,6 +411,12 @@
 //   made the sync feel heavy on every tap. The handler now runs
 //   window.sync.syncNow(), toggles the syncing state around it, and
 //   re-renders the bar in place. See the 1.18 revision entry.
+// - A failed manual sync was silent. The click handler caught the error
+//   (or ignored the boolean false return from syncNow()) and re-rendered
+//   to the idle "Last synced {old time}" label, so the user had no way to
+//   know the sync failed. It now calls showError() on either failure path,
+//   which paints "Sync failed — tap to retry · Last synced {time}" and
+//   leaves the bar tappable for a retry. See the 1.19 revision entry.
 //
 // ================================================================================================
 
@@ -1137,15 +1155,23 @@ function wireSyncStatusBar() {
     syncing = true;
     renderBar();
 
+    let ok = false;
     try {
       if (window.sync && window.sync.syncNow) {
-        await window.sync.syncNow();
+        ok = await window.sync.syncNow();
       }
     } catch (e) {
       console.warn("Sync failed", e);
+      ok = false;
     }
     
     syncing = false;
+    
+    if (!ok) {
+      showError();
+      return;
+    }
+    
     renderBar();
   });
 }
