@@ -213,6 +213,23 @@
 //        means the user is signed out, and the bar must stay hidden
 //        (Item 9).
 //
+// 1.22 — Two-layer undo + expandable menu + editable password-step email.
+//        Item 1: listens for 'history-recorded' events from store.js,
+//        shows a transient snackbar with the entry summary and an Undo
+//        button (auto-dismiss 5s, cleared on the next action), binds the
+//        header #undo-button and Ctrl+Z / Cmd+Z to undoLast(), and
+//        ignores Ctrl+Z while a text input or textarea has focus. Item 2:
+//        wires the #fab-menu-button to toggle #fab-menu-panel (aria-
+//        expanded kept in sync), closes the menu on tap-outside or
+//        Escape, and re-renders the #history-list from
+//        window.store.loadHistory() each time the menu opens and on every
+//        'history-recorded' event. Each history row gets its own Undo
+//        button calling undoHistoryEntry(id). Empty-state line toggled
+//        against the list's child count. Item 4: the password-step
+//        toggle no longer sets dom.authEmailInput.disabled = true, and
+//        the empty-email message is "Please enter your email address."
+//        Items 1 and 2 share history storage and ship together.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -304,6 +321,23 @@
 //   dom.authSignInPasswordBtn to its idle label and enabled state and
 //   writing the same friendly connection message into
 //   dom.authErrorPassword. See the 1.21 revision entry.
+// - wireUndo(): binds the header #undo-button, wires the snackbar's
+//   #undo-snackbar-button to window.store.undoLast(), listens for
+//   'history-recorded' to show the snackbar, and binds a document-level
+//   keydown for Ctrl+Z / Cmd+Z (ignored while a text input or textarea
+//   has focus). Snackbar auto-hides after 5s and its timer is cleared
+//   on a new action. See the 1.22 revision entry.
+// - wireFabMenu(): binds the #fab-menu-button to toggle
+//   #fab-menu-panel with aria-expanded kept in sync; closes the panel
+//   on tap-outside or Escape; renders #history-list from
+//   window.store.loadHistory() (newest first) each time the panel opens
+//   and on every 'history-recorded' event; each row gets an Undo button
+//   calling undoHistoryEntry(id). Empty-state line toggled against the
+//   list's child count. See the 1.22 revision entry.
+// - Item 4 password-step changes: the authPasswordToggle handler no
+//   longer sets dom.authEmailInput.disabled = true, and the empty-email
+//   message in the password handler is now "Please enter your email
+//   address." See the 1.22 revision entry.
 //
 // ================================================================================================
 //
@@ -479,6 +513,25 @@
 //   bar's showError() is not used here because a failed sign-in means the
 //   user is signed out and the bar must stay hidden (Item 9). See the
 //   1.21 revision entry.
+// - No undo existed anywhere — the delete-list dialog literally said "This
+//   cannot be undone." Item 1 adds two layers: a transient snackbar after
+//   each edit / delete / toggle / move / reorder (with an Undo button and
+//   a 5s auto-dismiss), and an always-available Recent Changes list in
+//   the new FAB menu (Item 2) with per-row Undo buttons, persisted in
+//   localStorage so it survives a reload. Undo is another store change
+//   and syncs like any other. See the 1.22 revision entry.
+// - The header was growing with every new control. Item 2 adds a ⋯ FAB
+//   menu (bottom-right) that holds occasional/config actions — the
+//   Recent Changes list is its first tenant. The manual refresh + last-
+//   synced label stay out of the menu and visible under the header; the
+//   menu closes on tap-outside, selection, or Escape. See the 1.22
+//   revision entry.
+// - The password step's email field was locked, so a user who typed the
+//   wrong address on the link step couldn't fix it before signing in
+//   with password. Item 4 drops the lock (and the email is already shared
+//   across both steps in the persistent-email layout), and the empty-
+//   email message is now "Please enter your email address." See the 1.22
+//   revision entry.
 //
 // ================================================================================================
 
@@ -508,7 +561,7 @@ function handlePasteAdd() {
       continue;
     }
 
-    addTask(trimmed, 'sort', null);
+    addTask(trimmed, 'sort', null, { record: false });
     existing.add(key);
     added += 1;
   }
@@ -979,6 +1032,187 @@ function wireEvents() {
 
 
 /* ================================================================================================
+   UNDO (Item 1)
+   ------------------------------------------------------------------------------------------------
+   Layer 1 — snackbar: after each history-recorded action, a transient banner shows the
+             entry's summary and an Undo button. Auto-hides after 5s; a new action clears
+             and resets the timer. Ctrl+Z / Cmd+Z on desktop calls undoLast() directly.
+   The header #undo-button is the persistent entry point; both it and Ctrl+Z use the same
+   window.store.undoLast() path as the snackbar button.
+   ================================================================================================ */
+
+const SNACKBAR_DURATION_MS = 5000;
+
+function wireUndo() {
+  const undoBtn = document.getElementById('undo-button');
+  const snackbar = document.getElementById('undo-snackbar');
+  const snackbarText = document.getElementById('undo-snackbar-text');
+  const snackbarBtn = document.getElementById('undo-snackbar-button');
+  if (!snackbar || !snackbarText || !snackbarBtn) return;
+
+  let snackbarTimer = 0;
+
+  function hideSnackbar() {
+    if (snackbarTimer) {
+      clearTimeout(snackbarTimer);
+      snackbarTimer = 0;
+    }
+    snackbar.hidden = true;
+  }
+
+  function showSnackbar(text) {
+    snackbarText.textContent = text || 'Action applied';
+    snackbar.hidden = false;
+    if (snackbarTimer) clearTimeout(snackbarTimer);
+    snackbarTimer = setTimeout(() => {
+      snackbarTimer = 0;
+      snackbar.hidden = true;
+    }, SNACKBAR_DURATION_MS);
+  }
+
+  function doUndo() {
+    const store = window.store;
+    if (!store || typeof store.undoLast !== 'function') return;
+    const ok = store.undoLast();
+    if (ok) {
+      hideSnackbar();
+      renderListSwitcher();
+      render();
+    }
+  }
+
+  // Layer 1: snackbar shown on each recorded action
+  window.addEventListener('history-recorded', (e) => {
+    const detail = e && e.detail ? e.detail : null;
+    if (!detail) return;
+    showSnackbar(detail.summary || 'Action applied');
+  });
+
+  // Snackbar Undo button
+  snackbarBtn.addEventListener('click', () => {
+    doUndo();
+  });
+
+  // Header undo button (persistent entry point)
+  if (undoBtn) {
+    undoBtn.addEventListener('click', () => {
+      doUndo();
+    });
+  }
+
+  // Ctrl+Z / Cmd+Z (desktop)
+  document.addEventListener('keydown', (e) => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    if (e.key !== 'z' && e.key !== 'Z') return;
+    // Do not hijack Ctrl+Z while the user is typing.
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+      return;
+    }
+    e.preventDefault();
+    doUndo();
+  });
+}
+
+
+/* ================================================================================================
+   FAB MENU (Item 2)
+   ------------------------------------------------------------------------------------------------
+   ⋯ button bottom-right. Toggles #fab-menu-panel with aria-expanded kept in sync. The
+   Recent Changes list inside the panel is rendered from window.store.loadHistory() (newest
+   first) each time the panel opens and on every 'history-recorded' event. Each row carries
+   its own Undo button calling undoHistoryEntry(id).
+   ================================================================================================ */
+
+function renderHistoryList() {
+  const listEl = document.getElementById('history-list');
+  const emptyEl = document.getElementById('history-empty');
+  if (!listEl) return;
+
+  const store = window.store;
+  const entries = store && typeof store.loadHistory === 'function' ? store.loadHistory() : [];
+
+  listEl.innerHTML = '';
+
+  if (!entries || entries.length === 0) {
+    if (emptyEl) emptyEl.hidden = false;
+    return;
+  }
+  if (emptyEl) emptyEl.hidden = true;
+
+  // Newest first
+  for (let i = entries.length - 1; i >= 0; i--) {
+    const entry = entries[i];
+    const li = document.createElement('li');
+    li.className = 'history-item';
+
+    const label = document.createElement('span');
+    label.className = 'history-item-text';
+    label.textContent = entry.summary || entry.kind || 'Change';
+    li.appendChild(label);
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'history-item-undo';
+    btn.textContent = 'Undo';
+    btn.addEventListener('click', () => {
+      const ok = store.undoHistoryEntry(entry.id);
+      if (ok) {
+        renderHistoryList();
+        renderListSwitcher();
+        render();
+      }
+    });
+    li.appendChild(btn);
+
+    listEl.appendChild(li);
+  }
+}
+
+function wireFabMenu() {
+  const fab = document.getElementById('fab-menu-button');
+  const panel = document.getElementById('fab-menu-panel');
+  if (!fab || !panel) return;
+
+  function setOpen(open) {
+    if (open) {
+      panel.hidden = false;
+      fab.setAttribute('aria-expanded', 'true');
+      renderHistoryList();
+    } else {
+      panel.hidden = true;
+      fab.setAttribute('aria-expanded', 'false');
+    }
+  }
+
+  fab.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setOpen(panel.hidden);
+  });
+
+  // Tap-outside closes
+  document.addEventListener('click', (e) => {
+    if (panel.hidden) return;
+    if (panel.contains(e.target)) return;
+    if (e.target === fab || fab.contains(e.target)) return;
+    setOpen(false);
+  });
+
+  // Escape closes
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !panel.hidden) {
+      setOpen(false);
+    }
+  });
+
+  // Re-render history whenever an action is recorded and the panel is open
+  window.addEventListener('history-recorded', () => {
+    if (!panel.hidden) renderHistoryList();
+  });
+}
+
+
+/* ================================================================================================
    AUTH UI
    ================================================================================================ */
 
@@ -1020,7 +1254,7 @@ function wireAuthEvents() {
   // Close modal
   dom.authClose.addEventListener('click', () => modal.close());
 
-  // Toggle to Password Step
+  // Toggle to Password Step — Item 4: email stays editable on this step.
   dom.authPasswordToggle.addEventListener('click', (e) => {
     e.preventDefault();
     dom.authTitle.textContent = 'Sign in with password';
@@ -1029,8 +1263,8 @@ function wireAuthEvents() {
     dom.authStepEmail.hidden = true;
     dom.authStepPassword.hidden = false;
     
-    // Lock the email so they don't accidentally change it here
-    dom.authEmailInput.disabled = true; 
+    // Item 4: keep the email input editable. (Pre-1.22 it was disabled here.)
+    dom.authEmailInput.disabled = false;
     dom.authPasswordInput.focus();
   });
 
@@ -1087,7 +1321,7 @@ function wireAuthEvents() {
     }
   });
 
-  // Sign in with Password
+  // Sign in with Password — Item 4: empty-email message updated.
   dom.authSignInPasswordBtn.addEventListener('click', async () => {
     const email = dom.authEmailInput.value.trim();
     const password = dom.authPasswordInput.value;
@@ -1095,7 +1329,7 @@ function wireAuthEvents() {
     dom.authErrorPassword.textContent = '';
     
     if (!email) {
-      dom.authErrorPassword.textContent = 'Email is missing. Click "Use link instead" to add it.';
+      dom.authErrorPassword.textContent = 'Please enter your email address.';
       return;
     }
     if (!password) {
@@ -1292,6 +1526,8 @@ function init() {
   wireEvents();
   wireAuthEvents();
   wireSyncStatusBar();
+  wireUndo();
+  wireFabMenu();
   render();
 
   // Initialize SortableJS after the first render.
