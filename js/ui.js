@@ -230,6 +230,21 @@
 //        the empty-email message is "Please enter your email address."
 //        Items 1 and 2 share history storage and ship together.
 //
+// 1.23 — Redo button, history list labels, sync tap rebuilds picker,
+//        compact sync label. Item 5: binds the new #redo-button and the
+//        Ctrl+Y / Ctrl+Shift+Z keyboard shortcuts to
+//        window.store.redoLast(), same typing guard as Ctrl+Z. Item 2
+//        (UI half): history rows now show the list name above each
+//        summary so entries from other lists make sense. Item 3: the
+//        sync bar tap now calls renderListSwitcher() alongside render()
+//        after a successful syncNow(), so a new list from another
+//        device appears in the picker without a reload. Item 4: sets a
+//        .header-compact class on .app-header when the viewport is
+//        narrow enough that the sync pill needs its shortened
+//        "↻ {time}" label; the CSS handles the row-break and this code
+//        only manages the label. Other sync-bar states (error, syncing,
+//        update-available) keep their full text at every width.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -338,6 +353,23 @@
 //   longer sets dom.authEmailInput.disabled = true, and the empty-email
 //   message in the password handler is now "Please enter your email
 //   address." See the 1.22 revision entry.
+// - Redo binding in wireUndo(): the header #redo-button and the Ctrl+Y /
+//   Ctrl+Shift+Z keyboard shortcuts call window.store.redoLast(). Same
+//   typing guard as Ctrl+Z. See the 1.23 revision entry.
+// - renderHistoryList() adds a small list-name label above each entry's
+//   summary when the entry's listId resolves to a list in state.lists.
+//   See the 1.23 revision entry.
+// - Sync bar tap now calls renderListSwitcher() after a successful
+//   syncNow() (alongside render()), so a list created or deleted on
+//   another device appears in the picker without a reload. See the 1.23
+//   revision entry.
+// - syncLabelCompact tracking in wireSyncStatusBar(): a boolean toggled
+//   by a matchMedia listener that shortens the idle sync label to
+//   "↻ {time}" on narrow viewports and keeps the full "Last synced
+//   {time}" on wider ones. Error / syncing / update-available labels
+//   stay full-length at every width. See the 1.23 revision entry.
+// - The .header-compact class on .app-header is set by a matchMedia
+//   listener at init() and on resize. See the 1.23 revision entry.
 //
 // ================================================================================================
 //
@@ -532,6 +564,35 @@
 //   across both steps in the persistent-email layout), and the empty-
 //   email message is now "Please enter your email address." See the 1.22
 //   revision entry.
+// - The undo snackbar never appeared because store.js's recordHistory()
+//   did not dispatch 'history-recorded'. The store now dispatches it;
+//   no UI change was needed. See the 1.23 revision entry for the store-
+//   side dispatch this pairs with.
+// - History rows did not say which list they belonged to, so entries
+//   from other lists looked like they had been applied to the active
+//   list. renderHistoryList() now prepends a small list-name label when
+//   the entry's listId resolves in state.lists. See the 1.23 revision
+//   entry.
+// - The sync button did not rebuild the list picker, so a list created
+//   or deleted on another device did not appear until a full page
+//   reload. The tap handler now calls renderListSwitcher() alongside
+//   render() after a successful syncNow(), matching what the sign-in
+//   path already does. See the 1.23 revision entry.
+// - The header was visually unorganized on mobile portrait: the sync
+//   pill sat on its own row and the ↩ glyph floated between pills. Item
+//   4 reorganizes the header via a `.header-compact` class: desktop and
+//   mobile landscape keep one row (List, Undo, Redo, Login, Sync,
+//   Theme); mobile portrait breaks onto two rows. A matchMedia listener
+//   toggles the class at init and on resize. The sync pill also shortens
+//   its idle label to "↻ {time}" under the compact breakpoint; error /
+//   syncing / update-available labels stay full-length. See the 1.23
+//   revision entry.
+// - No redo existed. Item 5 adds the ↪ button (bound to #redo-button)
+//   and Ctrl+Y / Ctrl+Shift+Z (skipped while typing in an input or
+//   textarea), both calling window.store.redoLast(). The store records
+//   the forward action alongside the undo action on every entry, and
+//   the redo stack is cleared by any new recorded action and on
+//   hydrateFromRemote(). See the 1.23 revision entry.
 //
 // ================================================================================================
 
@@ -1032,19 +1093,54 @@ function wireEvents() {
 
 
 /* ================================================================================================
-   UNDO (Item 1)
+   HEADER COMPACT (Item 4)
+   ------------------------------------------------------------------------------------------------
+   Toggles a `.header-compact` class on .app-header at the compact breakpoint (matches the mobile-
+   portrait breakpoint — 640px is where the header goes to two rows). The class is read by
+   css/base.css to break the row and to shorten the idle sync label. Error / syncing / update-
+   available labels stay full-length at every width.
+   ================================================================================================ */
+
+const HEADER_COMPACT_QUERY = '(max-width: 639.98px) and (orientation: portrait)';
+
+function wireHeaderCompact() {
+  const header = document.querySelector('.app-header');
+  if (!header) return;
+
+  const mql = window.matchMedia(HEADER_COMPACT_QUERY);
+
+  function apply() {
+    header.classList.toggle('header-compact', mql.matches);
+    // Re-render the sync bar so a width change can flip between the short
+    // "↻ {time}" and the full "Last synced {time}" idle label.
+    window.dispatchEvent(new CustomEvent('sync-state-changed'));
+  }
+
+  apply();
+  if (typeof mql.addEventListener === 'function') {
+    mql.addEventListener('change', apply);
+  } else if (typeof mql.addListener === 'function') {
+    mql.addListener(apply);
+  }
+}
+
+
+/* ================================================================================================
+   UNDO / REDO (Items 1, 5)
    ------------------------------------------------------------------------------------------------
    Layer 1 — snackbar: after each history-recorded action, a transient banner shows the
              entry's summary and an Undo button. Auto-hides after 5s; a new action clears
              and resets the timer. Ctrl+Z / Cmd+Z on desktop calls undoLast() directly.
-   The header #undo-button is the persistent entry point; both it and Ctrl+Z use the same
-   window.store.undoLast() path as the snackbar button.
+
+   The header #undo-button and #redo-button are the persistent entry points. Ctrl+Shift+Z and
+   Ctrl+Y call redoLast(). All five paths go through window.store.
    ================================================================================================ */
 
 const SNACKBAR_DURATION_MS = 5000;
 
 function wireUndo() {
   const undoBtn = document.getElementById('undo-button');
+  const redoBtn = document.getElementById('redo-button');
   const snackbar = document.getElementById('undo-snackbar');
   const snackbarText = document.getElementById('undo-snackbar-text');
   const snackbarBtn = document.getElementById('undo-snackbar-button');
@@ -1081,6 +1177,16 @@ function wireUndo() {
     }
   }
 
+  function doRedo() {
+    const store = window.store;
+    if (!store || typeof store.redoLast !== 'function') return;
+    const ok = store.redoLast();
+    if (ok) {
+      renderListSwitcher();
+      render();
+    }
+  }
+
   // Layer 1: snackbar shown on each recorded action
   window.addEventListener('history-recorded', (e) => {
     const detail = e && e.detail ? e.detail : null;
@@ -1100,17 +1206,30 @@ function wireUndo() {
     });
   }
 
-  // Ctrl+Z / Cmd+Z (desktop)
+  // Header redo button (Item 5)
+  if (redoBtn) {
+    redoBtn.addEventListener('click', () => {
+      doRedo();
+    });
+  }
+
+  // Ctrl+Z / Cmd+Z for undo; Ctrl+Shift+Z / Ctrl+Y for redo (desktop).
   document.addEventListener('keydown', (e) => {
     if (!(e.ctrlKey || e.metaKey)) return;
-    if (e.key !== 'z' && e.key !== 'Z') return;
-    // Do not hijack Ctrl+Z while the user is typing.
-    const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
+    if (e.key === 'z' || e.key === 'Z') {
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      e.preventDefault();
+      if (e.shiftKey) doRedo();
+      else doUndo();
       return;
     }
-    e.preventDefault();
-    doUndo();
+    if (e.key === 'y' || e.key === 'Y') {
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+      e.preventDefault();
+      doRedo();
+    }
   });
 }
 
@@ -1121,7 +1240,8 @@ function wireUndo() {
    ⋯ button bottom-right. Toggles #fab-menu-panel with aria-expanded kept in sync. The
    Recent Changes list inside the panel is rendered from window.store.loadHistory() (newest
    first) each time the panel opens and on every 'history-recorded' event. Each row carries
-   its own Undo button calling undoHistoryEntry(id).
+   its own Undo button calling undoHistoryEntry(id), and a small list-name label so entries
+   from other lists make sense.
    ================================================================================================ */
 
 function renderHistoryList() {
@@ -1146,10 +1266,19 @@ function renderHistoryList() {
     const li = document.createElement('li');
     li.className = 'history-item';
 
-    const label = document.createElement('span');
-    label.className = 'history-item-text';
-    label.textContent = entry.summary || entry.kind || 'Change';
-    li.appendChild(label);
+    // Item 2 (UI): small list-name label so entries from other lists make sense.
+    const listId = entry.listId || (entry.undoAction && entry.undoAction.listId);
+    const listName = listId && state.lists[listId] ? state.lists[listId].name : null;
+    if (listName) {
+      const labelEl = document.createElement('span');
+      labelEl.className = 'history-item-list';
+      labelEl.textContent = listName;
+      li.appendChild(labelEl);
+    }
+
+    const textEl = document.createElement('span');
+    textEl.className = 'history-item-text';
+    textEl.textContent = entry.summary || entry.kind || 'Change';
 
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -1161,8 +1290,13 @@ function renderHistoryList() {
         renderHistoryList();
         renderListSwitcher();
         render();
+      } else {
+        // Dead entry was dropped; re-render the list so the row disappears.
+        renderHistoryList();
       }
     });
+
+    li.appendChild(textEl);
     li.appendChild(btn);
 
     listEl.appendChild(li);
@@ -1387,6 +1521,8 @@ function wireAuthEvents() {
    SYNC STATUS BAR
    ================================================================================================ */
 
+const SYNC_COMPACT_QUERY = '(max-width: 639.98px) and (orientation: portrait)';
+
 function wireSyncStatusBar() {
   const bar = document.getElementById('sync-status-bar');
   const textSpan = document.getElementById('sync-status-text');
@@ -1396,9 +1532,23 @@ function wireSyncStatusBar() {
   let updateAvailable = false;
   let syncing = false;
 
+  const compactMql = window.matchMedia(SYNC_COMPACT_QUERY);
+  let compact = compactMql.matches;
+  function onCompactChange() { compact = compactMql.matches; renderBar(); }
+  if (typeof compactMql.addEventListener === 'function') compactMql.addEventListener('change', onCompactChange);
+  else if (typeof compactMql.addListener === 'function') compactMql.addListener(onCompactChange);
+
   function formatTime(ms) {
-    if (!ms) return 'Not synced yet';
+    if (!ms) return compact ? '—' : 'Not synced yet';
     return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+
+  function idleLabel() {
+    const lastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY), 10);
+    if (!lastSync) return compact ? '↻ —' : 'Not synced yet';
+    return compact
+      ? `↻ ${formatTime(lastSync)}`
+      : `Last synced ${formatTime(lastSync)}`;
   }
 
   function renderBar() {
@@ -1422,8 +1572,7 @@ function wireSyncStatusBar() {
       bar.disabled = false;
     } else {
       // Idle
-      const lastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY), 10);
-      textSpan.textContent = `Last synced ${formatTime(lastSync)}`;
+      textSpan.textContent = idleLabel();
       bar.disabled = false;
     }
   }
@@ -1437,8 +1586,12 @@ function wireSyncStatusBar() {
     bar.hidden = false;
     bar.classList.remove('is-syncing');
     bar.classList.add('is-error');
+    // Error text is never shortened — it is a state the user must read.
     const lastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY), 10);
-    textSpan.textContent = `Sync failed — tap to retry · Last synced ${formatTime(lastSync)}`;
+    const label = lastSync
+      ? `Sync failed — tap to retry · Last synced ${formatTime(lastSync)}`
+      : 'Sync failed — tap to retry';
+    textSpan.textContent = label;
     bar.disabled = false;
   }
 
@@ -1463,7 +1616,8 @@ function wireSyncStatusBar() {
     renderBar();
   });
 
-  // Listen for successful syncs from anywhere (load-time or manual)
+  // Listen for successful syncs from anywhere (load-time or manual). Also
+  // re-rendered on the header-compact media-query change (see wireHeaderCompact).
   window.addEventListener('sync-state-changed', () => {
     renderBar();
   });
@@ -1501,6 +1655,13 @@ function wireSyncStatusBar() {
       return;
     }
 
+    // Item 3: rebuild the list picker alongside the task list. SyncNow() alone
+    // only re-renders tasks; a list added or removed on another device never
+    // appeared in the picker until a full page reload. Sign-in already does
+    // this; the button path now matches.
+    renderListSwitcher();
+    render();
+
     // After a successful sync, check for a waiting service worker update.
     const hasUpdate = await checkForUpdate();
     if (hasUpdate) {
@@ -1526,6 +1687,7 @@ function init() {
   wireEvents();
   wireAuthEvents();
   wireSyncStatusBar();
+  wireHeaderCompact();
   wireUndo();
   wireFabMenu();
   render();
