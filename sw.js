@@ -220,6 +220,16 @@
 //       switcher and task list so cloud data appears on sign-in without
 //       a manual sync tap).
 //
+// 1.24 — Cache bump for the fetchRemoteState rethrow fix. CACHE_NAME goes
+//       from todo-cache-v33 to todo-cache-v34 so returning clients fetch
+//       the updated js/sync.js whose fetchRemoteState() catch block now
+//       rethrows after logging. Without the rethrow, syncNow() never saw
+//       the fetch failure: it wrote a fresh success timestamp and returned
+//       true, and the sync bar reverted to the idle label with a time from
+//       the failed sync. The Item 1 retest (offline tap shows "Sync failed
+//       — tap to retry · Last synced {last good time}") depends on this
+//       bump reaching returning clients.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -383,10 +393,22 @@
 //   syncNow() and re-renders the list switcher and task list). Without
 //   this bump, returning clients would stay on v32 and would not get the
 //   sign-in auto-sync or the update-prompt path.
+// - A manual sync while offline looked successful. fetchRemoteState()'s
+//   catch block logged the failure and returned normally, so syncNow()
+//   saw no error and wrote a fresh success timestamp; the sync bar then
+//   rendered the idle label with a time from the failed sync. The catch
+//   block now dispatches 'sync-state-changed' and rethrows, so syncNow()
+//   returns false, no timestamp is written, and the showError() path
+//   paints the retry label. See 1.24.
+// - Bumped CACHE_NAME from `todo-cache-v33` to `todo-cache-v34` so browsers
+//   fetch the fetchRemoteState rethrow fix in js/sync.js. Without this
+//   bump, returning clients would stay on v33 where a failed manual sync
+//   still wrote a fresh timestamp and showed the idle label with the
+//   failed-sync time.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v33';
+const CACHE_NAME = 'todo-cache-v34';
 
 const ASSETS_TO_CACHE = [
   './',
