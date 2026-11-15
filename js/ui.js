@@ -199,6 +199,20 @@
 //        automatic-reload path is deliberately not used — the user may
 //        be mid-typing.
 //
+// 1.21 — Friendly sign-in network-error handling. Both sign-in handlers
+//        (send-link and password) now wrap their Supabase call in
+//        try/catch. Supabase returns { error } for API-level failures
+//        (wrong password, wrong email) and those paths are unchanged. A
+//        network failure throws TypeError: Failed to fetch, which
+//        previously propagated as an unhandled rejection — nothing was
+//        shown and the button was left stuck on "Signing in..." /
+//        "Sending..." disabled. On a caught failure each handler resets
+//        its button and writes a friendly connection message into the
+//        modal's existing .auth-error paragraph. The sync bar's
+//        showError() is deliberately not used here — a failed sign-in
+//        means the user is signed out, and the bar must stay hidden
+//        (Item 9).
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -282,6 +296,14 @@
 //   window.location.reload(). The whole update-check path is guarded by
 //   'serviceWorker' in navigator so file:// does not crash. See the 1.20
 //   revision entry.
+// - try/catch around the send-link Supabase call, resetting
+//   dom.authSendEmailBtn to its idle label and enabled state and writing
+//   a friendly connection message into dom.authErrorEmail. See the 1.21
+//   revision entry.
+// - try/catch around the password sign-in Supabase call, resetting
+//   dom.authSignInPasswordBtn to its idle label and enabled state and
+//   writing the same friendly connection message into
+//   dom.authErrorPassword. See the 1.21 revision entry.
 //
 // ================================================================================================
 //
@@ -444,6 +466,19 @@
 //   registration.update(). The click handler now runs both after a
 //   successful syncNow() and flips the flag when a waiting or installing
 //   worker is present. See the 1.20 revision entry.
+// - A network failure during sign-in was silent and left the button stuck.
+//   Both sign-in handlers awaited the Supabase call without a try/catch
+//   and only checked the returned { error } object. API-level failures
+//   (wrong password, wrong email) come back in that object and were
+//   handled; a network failure throws TypeError: Failed to fetch, which
+//   propagated as an unhandled rejection — no message was shown, and the
+//   "Signing in..." / "Sending..." disabled state was never reset because
+//   the reset lines after the await never ran. Both handlers now catch
+//   the throw, reset their button, and write a friendly connection
+//   message into the modal's existing .auth-error paragraph. The sync
+//   bar's showError() is not used here because a failed sign-in means the
+//   user is signed out and the bar must stay hidden (Item 9). See the
+//   1.21 revision entry.
 //
 // ================================================================================================
 
@@ -1025,23 +1060,30 @@ function wireAuthEvents() {
     dom.authSendEmailBtn.textContent = 'Sending...';
     dom.authSendEmailBtn.disabled = true;
 
-    const { error } = await window.sync.getClient().auth.signInWithOtp({
-      email: email,
-      options: {
-        shouldCreateUser: true,
-        emailRedirectTo: window.location.origin + window.location.pathname
+    try {
+      const { error } = await window.sync.getClient().auth.signInWithOtp({
+        email: email,
+        options: {
+          shouldCreateUser: true,
+          emailRedirectTo: window.location.origin + window.location.pathname
+        }
+      });
+
+      dom.authSendEmailBtn.textContent = 'Send sign-in link';
+      dom.authSendEmailBtn.disabled = false;
+
+      if (error) {
+        dom.authErrorEmail.textContent = error.message;
+      } else {
+        dom.authSendEmailBtn.hidden = true;
+        dom.authSentMsg.hidden = false;
+        dom.authPasswordToggle.parentElement.hidden = true;
       }
-    });
-
-    dom.authSendEmailBtn.textContent = 'Send sign-in link';
-    dom.authSendEmailBtn.disabled = false;
-
-    if (error) {
-      dom.authErrorEmail.textContent = error.message;
-    } else {
-      dom.authSendEmailBtn.hidden = true;
-      dom.authSentMsg.hidden = false;
-      dom.authPasswordToggle.parentElement.hidden = true;
+    } catch (e) {
+      dom.authSendEmailBtn.textContent = 'Send sign-in link';
+      dom.authSendEmailBtn.disabled = false;
+      dom.authErrorEmail.textContent =
+        "Couldn't reach the server — check your connection and try again.";
     }
   });
 
@@ -1064,18 +1106,25 @@ function wireAuthEvents() {
     dom.authSignInPasswordBtn.textContent = 'Signing in...';
     dom.authSignInPasswordBtn.disabled = true;
 
-    const { data, error } = await window.sync.getClient().auth.signInWithPassword({
-      email: email,
-      password: password
-    });
+    try {
+      const { data, error } = await window.sync.getClient().auth.signInWithPassword({
+        email: email,
+        password: password
+      });
 
-    dom.authSignInPasswordBtn.textContent = 'Sign in';
-    dom.authSignInPasswordBtn.disabled = false;
+      dom.authSignInPasswordBtn.textContent = 'Sign in';
+      dom.authSignInPasswordBtn.disabled = false;
 
-    if (error) {
-      dom.authErrorPassword.textContent = error.message;
-    } else {
-      modal.close();
+      if (error) {
+        dom.authErrorPassword.textContent = error.message;
+      } else {
+        modal.close();
+      }
+    } catch (e) {
+      dom.authSignInPasswordBtn.textContent = 'Sign in';
+      dom.authSignInPasswordBtn.disabled = false;
+      dom.authErrorPassword.textContent =
+        "Couldn't reach the server — check your connection and try again.";
     }
   });
 
