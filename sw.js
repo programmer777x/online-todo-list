@@ -210,6 +210,16 @@
 //       which made a fully-saved import look partial. CACHE_NAME goes from
 //       todo-cache-v31 to todo-cache-v32 to deliver the new sw.js logic.
 //
+// 1.23 — Cache bump for the sync-bar error state, SW update check, and
+//       sign-in auto-sync round. CACHE_NAME goes from todo-cache-v32 to
+//       todo-cache-v33 so returning clients fetch the updated js/ui.js
+//       (the sync bar now shows the error state when a manual sync fails,
+//       and checks for a waiting service worker update after a successful
+//       sync, reloading on the next tap) and the updated js/sync.js (the
+//       SIGNED_IN handler now awaits syncNow() and re-renders the list
+//       switcher and task list so cloud data appears on sign-in without
+//       a manual sync tap).
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -365,10 +375,18 @@
 //   branch cached Supabase GET responses and served a pre-import snapshot on
 //   a repeat identical read. The fetch listener now bypasses all Supabase
 //   traffic, so reads always come from the network. See 1.22.
+// - Bumped CACHE_NAME from `todo-cache-v32` to `todo-cache-v33` so browsers
+//   fetch the sync-bar error state, service worker update check, and
+//   sign-in auto-sync round: js/ui.js (showError() on failed manual sync;
+//   checkForUpdate() after a successful sync, reload on next tap while
+//   updateAvailable is true) and js/sync.js (SIGNED_IN handler awaits
+//   syncNow() and re-renders the list switcher and task list). Without
+//   this bump, returning clients would stay on v32 and would not get the
+//   sign-in auto-sync or the update-prompt path.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v32';
+const CACHE_NAME = 'todo-cache-v33';
 
 const ASSETS_TO_CACHE = [
   './',
