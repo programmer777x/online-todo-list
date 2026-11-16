@@ -41,7 +41,7 @@
 
       <div class="app-header-controls">
 
-        <!-- ---- Primary group: List / Undo / Redo / Login ---- -->
+        <!-- ---- Primary group: List / Theme / Login (wide) ---- -->
         <div class="header-primary">
 
           <!-- List switcher -->
@@ -74,33 +74,26 @@
             >🗑</button>
           </div>
 
-          <!-- Undo -->
-          <button
-            type="button"
-            id="undo-button"
-            class="icon-button header-pill"
-            aria-label="Undo last action"
-            title="Undo last action"
-          >↩</button>
-
-          <!-- Redo -->
-          <button
-            type="button"
-            id="redo-button"
-            class="icon-button header-pill"
-            aria-label="Redo last undone action"
-            title="Redo last undone action"
-          >↪</button>
+          <!-- Theme switcher (in primary for the wide order; JS moves it
+               to secondary in portrait) -->
+          <label class="visually-hidden" for="theme-select">Theme</label>
+          <select id="theme-select" class="theme-select" aria-label="Theme">
+            <option value="twilight">Twilight Brand</option>
+            <option value="terminal">Midnight Terminal</option>
+            <option value="paper">Clean Paper</option>
+            <option value="avocado">LuMi Avocado</option>
+          </select>
 
           <!-- Auth Button -->
           <button type="button" id="auth-button" class="button auth-button header-pill">Sign in to sync</button>
 
         </div>
 
-        <!-- ---- Secondary group: Sync / Theme ---- -->
+        <!-- ---- Secondary group: Sync / Undo / Redo (wide) ---- -->
         <div class="header-secondary">
 
-          <!-- Sync status pill (before Theme per round-3 spec) -->
+          <!-- Sync status pill. The icon span is the ONLY refresh arrow;
+               the text span holds only the time or "—". -->
           <button
             type="button"
             id="sync-status-bar"
@@ -109,17 +102,26 @@
             hidden
           >
             <span class="sync-status-icon" aria-hidden="true">↻</span>
-            <span class="sync-status-text" id="sync-status-text">Last synced —</span>
+            <span class="sync-status-text" id="sync-status-text">—</span>
           </button>
 
-          <!-- Theme switcher -->
-          <label class="visually-hidden" for="theme-select">Theme</label>
-          <select id="theme-select" class="theme-select" aria-label="Theme">
-            <option value="twilight">Twilight Brand</option>
-            <option value="terminal">Midnight Terminal</option>
-            <option value="paper">Clean Paper</option>
-            <option value="avocado">LuMi Avocado</option>
-          </select>
+          <!-- Undo (pill) -->
+          <button
+            type="button"
+            id="undo-button"
+            class="icon-button header-pill"
+            aria-label="Undo last action"
+            title="Undo last action"
+          >↩</button>
+
+          <!-- Redo (pill) -->
+          <button
+            type="button"
+            id="redo-button"
+            class="icon-button header-pill"
+            aria-label="Redo last undone action"
+            title="Redo last undone action"
+          >↪</button>
 
         </div>
 
@@ -238,8 +240,9 @@
     </footer>
 
     <!-- ============================ UNDO SNACKBAR ============================ -->
-    <!-- Undo button first (left), summary text after it. The text truncates
-         with ellipsis; the button never wraps to a second line. -->
+    <!-- Undo button first (left). The trailing quote, when the summary ends
+         with one, lives in a separate fixed span (#undo-snackbar-tail) so it
+         survives the truncating ellipsis on #undo-snackbar-text. -->
     <div
       id="undo-snackbar"
       class="undo-snackbar"
@@ -249,6 +252,7 @@
     >
       <button type="button" id="undo-snackbar-button" class="undo-snackbar-button">Undo</button>
       <span id="undo-snackbar-text" class="undo-snackbar-text">Action applied</span>
+      <span id="undo-snackbar-tail" class="undo-snackbar-tail"></span>
     </div>
 
     <!-- ============================ EXPANDABLE MENU ============================ -->
