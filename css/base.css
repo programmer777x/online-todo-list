@@ -104,10 +104,6 @@ body {
 
 /* ================================================================================================
    3. APP SHELL
-   ------------------------------------------------------------------------------------------------
-   Wide default: 1020px so the six header controls fit one row on desktop / landscape.
-   Compact (mobile portrait, ≤ 639.98px wide AND portrait): back to 760px so the two-row
-   header has room and the section cards stay readable.
    ================================================================================================ */
 
 .app-shell {
@@ -127,26 +123,6 @@ body {
 
 /* ================================================================================================
    4. HEADER
-   ------------------------------------------------------------------------------------------------
-   .app-header           — brand on the left, controls on the right
-   .app-header-controls  — the right side
-   .header-primary       — List / Undo / Redo / Login group
-   .header-secondary     — Theme / Sync group
-   .header-pill          — shared pill treatment for undo, redo, auth, sync
-
-   Default (desktop, mobile landscape): one row.
-     .app-header-controls is flex-row, and .header-primary + .header-secondary
-     are inline flex groups so their contents lay out left-to-right in the
-     requested order: List, Undo, Redo, Login, Theme, Sync.
-
-   .header-compact (mobile portrait): two rows.
-     .app-header-controls stacks the two groups vertically. The JS
-     (wireHeaderCompact) moves #undo-button and #redo-button into
-     .header-secondary so the rows read:
-       Row 1: List, Login
-       Row 2: Theme, Sync, Undo, Redo
-     The breakpoint matches the JS HEADER_COMPACT_QUERY so class and CSS
-     stay in lockstep.
    ================================================================================================ */
 
 .app-header {
@@ -199,7 +175,6 @@ body {
   min-width: 0;
 }
 
-/* Shared pill treatment — undo, redo, auth, sync all read as one control row. */
 .header-pill {
   border: 1px solid var(--input-border);
   border-radius: var(--radius-pill);
@@ -223,7 +198,6 @@ body {
   border-color: var(--accent);
 }
 
-/* Compact (mobile portrait) — two rows: primary first, secondary second. */
 .app-header.header-compact {
   align-items: stretch;
 }
@@ -301,8 +275,6 @@ body {
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-/* The undo and redo icons override the base icon-button's square footprint with
-   the pill shape so they sit in the row as peers of the auth / sync pills. */
 .icon-button.header-pill {
   width: auto;
   height: auto;
@@ -366,11 +338,6 @@ body {
 
 /* ================================================================================================
    4.5 SYNC STATUS BAR
-   ------------------------------------------------------------------------------------------------
-   The pill lives in .header-secondary. The `[hidden]` rule below is load-bearing: without it,
-   `bar.hidden = true` in ui.js sets the attribute but `.sync-status-bar`'s own `display:
-   inline-flex` overrides the UA `[hidden] { display: none }`, so the bar stays visible when
-   signed out. Do not remove.
    ================================================================================================ */
 
 .sync-status-bar {
@@ -1406,6 +1373,14 @@ select option {
 
 /* ================================================================================================
    17. UNDO SNACKBAR
+   ------------------------------------------------------------------------------------------------
+   Undo button first (left), summary text after it. Text truncates with ellipsis; the button
+   never wraps to a second line no matter how long the summary is.
+
+   The `[hidden]` rules on both the snackbar and the button are load-bearing: without them,
+   the author `display: inline-flex` on each element would override the UA
+   `[hidden] { display: none }`, so `hidden = true` would set the attribute and change nothing
+   on screen. (Same root cause as the sync-status-bar `[hidden]` rule.)
    ================================================================================================ */
 
 .undo-snackbar {
@@ -1416,9 +1391,9 @@ select option {
   z-index: 5000;
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--space-2);
   max-width: min(420px, calc(100vw - 32px));
-  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+  padding: var(--space-1) var(--space-2);
   background: var(--menu-bg);
   color: var(--text-primary);
   border: 1px solid var(--menu-border);
@@ -1446,6 +1421,8 @@ select option {
 .undo-snackbar-text {
   flex: 1 1 auto;
   min-width: 0;
+  font-size: 0.875rem;
+  color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1461,8 +1438,17 @@ select option {
   font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
   transition: background var(--transition-fast);
+}
+
+/* The button can be hidden by showSnackbar({ hideButton: true }) for non-undoable messages
+   (e.g. the 'history-undo-failed' notice). Without this rule the author `display: inline-flex`
+   above would override the UA `[hidden] { display: none }`, so the button would stay visible. */
+.undo-snackbar-button[hidden] {
+  display: none;
 }
 
 .undo-snackbar-button:hover {
