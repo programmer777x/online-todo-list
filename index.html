@@ -89,7 +89,7 @@
 
         </div>
 
-        <!-- ---- Secondary group: Sync / Undo / Redo (wide) ---- -->
+        <!-- ---- Secondary group: Sync / Undo+Redo pill (wide) ---- -->
         <div class="header-secondary">
 
           <!-- Sync status pill. The icon span is the ONLY refresh arrow;
@@ -105,23 +105,25 @@
             <span class="sync-status-text" id="sync-status-text">—</span>
           </button>
 
-          <!-- Undo (pill) -->
-          <button
-            type="button"
-            id="undo-button"
-            class="icon-button header-pill"
-            aria-label="Undo last action"
-            title="Undo last action"
-          >↩</button>
-
-          <!-- Redo (pill) -->
-          <button
-            type="button"
-            id="redo-button"
-            class="icon-button header-pill"
-            aria-label="Redo last undone action"
-            title="Redo last undone action"
-          >↪</button>
+          <!-- Undo + Redo in ONE shared pill. Same pattern as the List
+               switcher: outline/background/padding come from the
+               container; the buttons inside are transparent. -->
+          <div class="header-pill header-pill-group" role="group" aria-label="Undo and Redo">
+            <button
+              type="button"
+              id="undo-button"
+              class="icon-button pill-group-button"
+              aria-label="Undo last action"
+              title="Undo last action"
+            >↩</button>
+            <button
+              type="button"
+              id="redo-button"
+              class="icon-button pill-group-button"
+              aria-label="Redo last undone action"
+              title="Redo last undone action"
+            >↪</button>
+          </div>
 
         </div>
 
