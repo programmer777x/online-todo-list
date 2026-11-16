@@ -11,21 +11,12 @@
 //
 // === REVISIONS ===
 //
-// 1.1 through 1.26 — prior rounds.
-// 1.27 — Round 6: sync single arrow, Enter submits sign-in, closing
-//        quote preserved when text truncates. (a) The sync pill's short
-//        idle label and no-sync label drop the leading "↻"; the icon
-//        span is the only refresh arrow. (b) The email input and the
-//        password input both submit their step's button on Enter.
-//        (c) History rows and the snackbar split the summary into a
-//        truncating text span plus a fixed trailing quote span when
-//        the summary ends with `"`.
-// 1.28 — Round 6 Item 4: wireHeaderCompact() updated for the new wide
-//        DOM order (List / Theme / Login in primary, Sync / Undo /
-//        Redo in secondary). Only Theme moves between groups; the
-//        reorder is insertBefore to preserve List/Theme/Login order
-//        when returning to wide. Undo/Redo and Sync stay in secondary
-//        in both modes.
+// 1.1 through 1.28 — prior rounds.
+// 1.29 — Round 7 Item 4: History rows always render the label cell and
+//        the tail cell, even when empty, so the CSS grid's four columns
+//        line up across every row. Rows without a list name get an
+//        empty .history-item-list span; rows without a closing quote
+//        get an empty .history-item-tail span.
 //
 // ================================================================================================
 //
@@ -33,28 +24,17 @@
 //
 // - Initial creation. Extracted event handling and initialization from app.js.
 // - All prior additions carried forward unchanged.
-// - Enter-to-submit handlers on the shared email input and the
-//   password input (Item 2). See 1.27.
-// - splitTrailingQuote(text) helper and its use in renderHistoryList()
-//   and showSnackbar() (Item 3). See 1.27.
-// - wireHeaderCompact() reworked so only Theme moves between header
-//   groups, matching the round-6 wide/portrait specs. See 1.28.
+// - Empty-cell rendering for the History grid (Item 4). See 1.29.
 //
 // ================================================================================================
 //
 // === FIXES ===
 //
 // - Prior rounds' fixes carried forward unchanged.
-// - Sync pill showed two refresh arrows. Removed the arrow from the
-//   short idle label and the no-sync label. See 1.27.
-// - Pressing Enter in the sign-in modal did nothing. Added a keydown
-//   handler on the shared email input and on the password input. See
-//   1.27.
-// - A summary ending in a quoted task name lost its closing quote to
-//   the ellipsis. Split the summary at the last character. See 1.27.
-// - Header groups were out of step with the new wide DOM order; the
-//   round-3 wireHeaderCompact() fought the new starting positions.
-//   Reworked to move only Theme. See 1.28.
+// - Rows without a list name shifted the text column left and broke
+//   the shared grid alignment. The label cell is now always rendered
+//   (empty when absent), and the tail cell is always rendered (empty
+//   when the summary has no trailing quote). See 1.29.
 //
 // ================================================================================================
 
@@ -481,21 +461,7 @@ function wireEvents() {
 
 
 /* ================================================================================================
-   HEADER COMPACT (round 6 Item 4)
-   ------------------------------------------------------------------------------------------------
-   Wide order (default):        List, Theme, Login, Sync, Undo, Redo
-     .header-primary   = List + Theme + Login
-     .header-secondary = Sync + Undo + Redo
-
-   Portrait order (compact):    Row 1: List, Login. Row 2: Theme, Sync, Undo, Redo.
-     .header-primary   = List + Login
-     .header-secondary = Theme + Sync + Undo + Redo
-
-   Only Theme moves between groups. Undo, Redo and Sync stay in
-   .header-secondary in both modes; List and Login stay in
-   .header-primary. Theme's placement inside .header-primary is done
-   with insertBefore so the wide order List / Theme / Login is
-   preserved when a resize goes back to wide.
+   HEADER COMPACT
    ================================================================================================ */
 
 const HEADER_COMPACT_QUERY = '(max-width: 639.98px) and (orientation: portrait)';
@@ -511,6 +477,7 @@ function wireHeaderCompact() {
   const syncBtn = document.getElementById('sync-status-bar');
   const undoBtn = document.getElementById('undo-button');
   const redoBtn = document.getElementById('redo-button');
+  const pillGroup = undoBtn ? undoBtn.closest('.header-pill-group') : null;
 
   const mql = window.matchMedia(HEADER_COMPACT_QUERY);
 
@@ -518,14 +485,10 @@ function wireHeaderCompact() {
     header.classList.toggle('header-compact', mql.matches);
 
     if (mql.matches) {
-      // Portrait: Theme moves out of primary (into secondary, first slot).
       if (theme && theme.parentNode !== secondary) {
         secondary.insertBefore(theme, secondary.firstChild);
       }
     } else {
-      // Wide: Theme returns to primary, before Login (so wide order is
-      // List / Theme / Login). If Login is not in primary for any
-      // reason, append Theme to primary.
       if (theme && theme.parentNode !== primary) {
         if (loginBtn && loginBtn.parentNode === primary) {
           primary.insertBefore(theme, loginBtn);
@@ -535,18 +498,11 @@ function wireHeaderCompact() {
       }
     }
 
-    // The other members of the two groups don't move. Undo, Redo, and
-    // Sync stay in .header-secondary; List and Login stay in
-    // .header-primary. If a future markup change moves any of them,
-    // this function is the one place to update.
     if (syncBtn && syncBtn.parentNode !== secondary) {
       secondary.appendChild(syncBtn);
     }
-    if (undoBtn && undoBtn.parentNode !== secondary) {
-      secondary.appendChild(undoBtn);
-    }
-    if (redoBtn && redoBtn.parentNode !== secondary) {
-      secondary.appendChild(redoBtn);
+    if (pillGroup && pillGroup.parentNode !== secondary) {
+      secondary.appendChild(pillGroup);
     }
     if (loginBtn && loginBtn.parentNode !== primary) {
       primary.appendChild(loginBtn);
@@ -678,6 +634,9 @@ function wireUndo() {
 
 /* ================================================================================================
    FAB MENU
+   ------------------------------------------------------------------------------------------------
+   History row order: [Undo N button] [list-name label] [summary text] [closing quote].
+   All four cells are always rendered so the CSS grid columns line up across rows.
    ================================================================================================ */
 
 function renderHistoryList() {
@@ -704,7 +663,7 @@ function renderHistoryList() {
     const li = document.createElement('li');
     li.className = 'history-item';
 
-    // 1. Undo button FIRST.
+    // 1. Undo button.
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'history-item-undo';
@@ -721,12 +680,14 @@ function renderHistoryList() {
       }
     });
 
-    // 2. List-name label SECOND (only when present).
+    // 2. List-name label (ALWAYS rendered — empty when no list).
     const listId = entry.listId || (entry.undoAction && entry.undoAction.listId);
     const listName = listId && state.lists[listId] ? state.lists[listId].name : null;
+    const labelEl = document.createElement('span');
+    labelEl.className = 'history-item-list';
+    labelEl.textContent = listName || '';
 
-    // 3. Summary text LAST. Split the closing quote when present so it
-    //    survives truncation.
+    // 3. Summary text (split at the trailing quote).
     const rawSummary = entry.summary || entry.kind || 'Change';
     const { head, tail } = splitTrailingQuote(rawSummary);
 
@@ -734,20 +695,15 @@ function renderHistoryList() {
     textEl.className = 'history-item-text';
     textEl.textContent = head;
 
+    // 4. Tail (ALWAYS rendered — empty when no closing quote).
+    const tailEl = document.createElement('span');
+    tailEl.className = 'history-item-tail';
+    tailEl.textContent = tail;
+
     li.appendChild(btn);
-    if (listName) {
-      const labelEl = document.createElement('span');
-      labelEl.className = 'history-item-list';
-      labelEl.textContent = listName;
-      li.appendChild(labelEl);
-    }
+    li.appendChild(labelEl);
     li.appendChild(textEl);
-    if (tail) {
-      const tailEl = document.createElement('span');
-      tailEl.className = 'history-item-tail';
-      tailEl.textContent = tail;
-      li.appendChild(tailEl);
-    }
+    li.appendChild(tailEl);
 
     listEl.appendChild(li);
   }
