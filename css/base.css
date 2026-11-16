@@ -198,6 +198,46 @@ body {
   border-color: var(--accent);
 }
 
+/* Shared pill container that holds Undo + Redo. Same border/background
+   as the other pills; inner buttons are transparent. Round 7 Item 3. */
+.header-pill-group {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px;
+}
+
+.pill-group-button {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.pill-group-button:hover:not(:disabled) {
+  background: var(--card-bg-hover);
+  color: var(--text-primary);
+}
+
+.pill-group-button:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+}
+
+.pill-group-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 .app-header.header-compact {
   align-items: stretch;
 }
@@ -272,42 +312,6 @@ body {
   align-items: center;
   justify-content: center;
   transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-/* Undo/Redo pills — the pill look wins over .icon-button's
-   border:none / background:transparent by setting the border and
-   background explicitly on this more specific selector. Round 7
-   Item 3. */
-.icon-button.header-pill {
-  width: auto;
-  height: auto;
-  min-width: 2.25rem;
-  min-height: 2.25rem;
-  font-size: 1rem;
-  border: 1px solid var(--input-border);
-  border-radius: var(--radius-pill);
-  background: var(--input-bg);
-  color: var(--text-secondary);
-  padding: var(--space-1) var(--space-2);
-  backdrop-filter: blur(var(--panel-blur));
-  -webkit-backdrop-filter: blur(var(--panel-blur));
-}
-
-.icon-button.header-pill:hover:not(:disabled) {
-  background: var(--card-bg-hover);
-  color: var(--text-primary);
-  border-color: var(--accent);
-}
-
-.icon-button.header-pill:focus-visible {
-  outline: none;
-  box-shadow: var(--accent-glow);
-  border-color: var(--accent);
-}
-
-.icon-button.header-pill:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
 }
 
 @media (max-width: 639px) {
@@ -1401,8 +1405,9 @@ select option {
 /* ================================================================================================
    17. UNDO SNACKBAR
    ------------------------------------------------------------------------------------------------
-   Undo button first (left), summary head after it, trailing quote (when present) immediately after
-   the head. The head shrinks (never grows) so the tail sits directly after the visible text.
+   Undo button first, then the summary head, then the trailing quote flush against the head.
+   The tail negates the row gap via a negative margin so there is zero space between the
+   truncating text and the closing quote. Round 7 Item 1.
    ================================================================================================ */
 
 .undo-snackbar {
@@ -1441,7 +1446,7 @@ select option {
 }
 
 /* Shrink-only (no grow) so the tail after it stays flush against the
-   visible text. Round 7 Item 1. */
+   visible text. */
 .undo-snackbar-text {
   flex: 0 1 auto;
   min-width: 0;
@@ -1452,9 +1457,12 @@ select option {
   white-space: nowrap;
 }
 
-/* Trailing quote: fixed after the ellipsis. Never shrinks, never wraps. */
+/* Trailing quote: fixed after the ellipsis. Never shrinks, never wraps.
+   Zero-gap: cancel the row gap with a negative left margin equal to
+   the flex gap (--space-2). */
 .undo-snackbar-tail {
   flex: 0 0 auto;
+  margin-left: calc(-1 * var(--space-2));
   font-size: 0.875rem;
   color: var(--text-primary);
   white-space: nowrap;
@@ -1492,13 +1500,18 @@ select option {
 /* ================================================================================================
    18. FAB MENU
    ------------------------------------------------------------------------------------------------
-   History rows are single-line and never wrap:
+   History rows are CSS grid with four columns:
 
-     [Undo N button] [list-name label] [summary head] [trailing quote if present]
+     [button] [label] [text] [tail]
 
-   Button / label / tail are flex: 0 0 auto (never shrink, never wrap).
-   The head shrinks (never grows) so the tail sits directly after the
-   visible text — whether the text is truncated or short.
+   The button and label columns size to their widest content across
+   rows (`max-content`), the text column fills the remaining space
+   (`minmax(0, 1fr)`) and truncates with ellipsis, and the tail column
+   is `max-content` and sits flush against the text (column-gap does
+   not apply between text and tail because they are adjacent cells in
+   the same grid; a small gap between tail and the next column is
+   inherited from the tail column's own boundary and does not add
+   space between the two visual neighbours). Round 7 Item 4.
    ================================================================================================ */
 
 .fab-menu-button {
@@ -1601,11 +1614,15 @@ select option {
   gap: var(--space-1);
 }
 
+/* Grid row: [button] [label] [text] [tail]. Column gap for the two
+   first gaps; the text→tail adjacency gets no gap because the tail
+   has a negative left margin equal to the gap. */
 .history-item {
-  display: flex;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  column-gap: var(--space-2);
+  row-gap: 0;
   align-items: center;
-  gap: var(--space-2);
   min-width: 0;
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
@@ -1618,7 +1635,6 @@ select option {
 }
 
 .history-item-undo {
-  flex: 0 0 auto;
   padding: var(--space-1) var(--space-3);
   border: 1px solid var(--input-border);
   border-radius: var(--radius-pill);
@@ -1644,12 +1660,8 @@ select option {
   box-shadow: var(--accent-glow);
 }
 
-/* Fixed-width label; margin-left: auto keeps it right-aligned before
-   the summary so the summary + tail cluster sits at the right. */
 .history-item-list {
-  flex: 0 0 auto;
-  max-width: 35%;
-  margin-left: auto;
+  max-width: 8rem;
   padding: 1px var(--space-2);
   font-size: 0.6875rem;
   font-weight: 700;
@@ -1663,11 +1675,7 @@ select option {
   white-space: nowrap;
 }
 
-/* Shrink-only (no grow). The tail after it sits flush against the
-   visible text. Round 7 Item 1. */
 .history-item-text {
-  flex: 0 1 auto;
-  min-width: 0;
   font-size: 0.875rem;
   color: var(--text-primary);
   overflow: hidden;
@@ -1675,8 +1683,9 @@ select option {
   white-space: nowrap;
 }
 
+/* Zero-gap between text and tail: cancel the column gap. */
 .history-item-tail {
-  flex: 0 0 auto;
+  margin-left: calc(-1 * var(--space-2));
   font-size: 0.875rem;
   color: var(--text-primary);
   white-space: nowrap;
