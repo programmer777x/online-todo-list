@@ -41,71 +41,90 @@
 
       <div class="app-header-controls">
 
-        <!-- ---- List switcher ---- -->
-        <div class="list-switcher" role="group" aria-label="Lists">
-          <label class="visually-hidden" for="list-select">Active list</label>
-          <select id="list-select" class="list-select" aria-label="Active list"></select>
+        <!-- ---- Primary group: List / Undo / Redo / Login ---- -->
+        <div class="header-primary">
 
+          <!-- List switcher -->
+          <div class="list-switcher" role="group" aria-label="Lists">
+            <label class="visually-hidden" for="list-select">Active list</label>
+            <select id="list-select" class="list-select" aria-label="Active list"></select>
+
+            <button
+              type="button"
+              id="list-new-button"
+              class="icon-button"
+              aria-label="Create a new list"
+              title="New list"
+            >＋</button>
+
+            <button
+              type="button"
+              id="list-rename-button"
+              class="icon-button"
+              aria-label="Rename the active list"
+              title="Rename list"
+            >✎</button>
+
+            <button
+              type="button"
+              id="list-delete-button"
+              class="icon-button icon-button-danger"
+              aria-label="Delete the active list"
+              title="Delete list"
+            >🗑</button>
+          </div>
+
+          <!-- Undo (Item 1) -->
           <button
             type="button"
-            id="list-new-button"
-            class="icon-button"
-            aria-label="Create a new list"
-            title="New list"
-          >＋</button>
+            id="undo-button"
+            class="icon-button header-pill"
+            aria-label="Undo last action"
+            title="Undo last action"
+          >↩</button>
 
+          <!-- Redo (Item 5) -->
           <button
             type="button"
-            id="list-rename-button"
-            class="icon-button"
-            aria-label="Rename the active list"
-            title="Rename list"
-          >✎</button>
+            id="redo-button"
+            class="icon-button header-pill"
+            aria-label="Redo last undone action"
+            title="Redo last undone action"
+          >↪</button>
 
-          <button
-            type="button"
-            id="list-delete-button"
-            class="icon-button icon-button-danger"
-            aria-label="Delete the active list"
-            title="Delete list"
-          >🗑</button>
+          <!-- Auth Button -->
+          <button type="button" id="auth-button" class="button auth-button header-pill">Sign in to sync</button>
+
         </div>
 
-        <!-- ---- Undo (Item 1) ---- -->
-        <button
-          type="button"
-          id="undo-button"
-          class="icon-button"
-          aria-label="Undo last action"
-          title="Undo last action"
-        >↩</button>
+        <!-- ---- Secondary group: Theme / Sync ---- -->
+        <div class="header-secondary">
 
-        <!-- ---- Auth Button ---- -->
-        <button type="button" id="auth-button" class="button auth-button">Sign in to sync</button>
+          <!-- Theme switcher -->
+          <label class="visually-hidden" for="theme-select">Theme</label>
+          <select id="theme-select" class="theme-select" aria-label="Theme">
+            <option value="twilight">Twilight Brand</option>
+            <option value="terminal">Midnight Terminal</option>
+            <option value="paper">Clean Paper</option>
+            <option value="avocado">LuMi Avocado</option>
+          </select>
 
-        <!-- ---- Theme switcher ---- -->
-        <label class="visually-hidden" for="theme-select">Theme</label>
-        <select id="theme-select" class="theme-select" aria-label="Theme">
-          <option value="twilight">Twilight Brand</option>
-          <option value="terminal">Midnight Terminal</option>
-          <option value="paper">Clean Paper</option>
-          <option value="avocado">LuMi Avocado</option>
-        </select>
+          <!-- Sync status pill (was a standalone row under the header) -->
+          <button
+            type="button"
+            id="sync-status-bar"
+            class="sync-status-bar header-pill"
+            aria-label="Sync now"
+            hidden
+          >
+            <span class="sync-status-icon" aria-hidden="true">↻</span>
+            <span class="sync-status-text" id="sync-status-text">Last synced —</span>
+          </button>
+
+        </div>
 
       </div>
     </header>
-
-    <!-- ============================ SYNC STATUS BAR ============================ -->
-    <button
-      type="button"
-      id="sync-status-bar"
-      class="sync-status-bar"
-      aria-label="Sync now"
-      hidden
-    >
-      <span class="sync-status-icon" aria-hidden="true">↻</span>
-      <span class="sync-status-text" id="sync-status-text">Last synced —</span>
-    </button>
 
     <!-- ============================ QUICK ADD ============================ -->
     <section class="quick-add" aria-label="Quick add">
