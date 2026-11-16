@@ -15,16 +15,17 @@
 // 1.27 — Round 6: sync single arrow, Enter submits sign-in, closing
 //        quote preserved when text truncates. (a) The sync pill's short
 //        idle label and no-sync label drop the leading "↻"; the icon
-//        span is the only refresh arrow, so idle reads "8:03 AM" and
-//        no-sync reads "—". The full title/aria-label stays "Last
-//        synced …". (b) The email input and the password input both
-//        submit their step's button on Enter. Same validation, same
-//        error messages, works from mobile Go/Enter. The "Use
-//        password instead" / "Use link instead" toggles are
-//        unaffected. (c) History rows and the snackbar split the
-//        summary into a truncating text span plus a fixed trailing
-//        quote span when the summary ends with `"`, so the closing
-//        quote stays visible after the ellipsis.
+//        span is the only refresh arrow. (b) The email input and the
+//        password input both submit their step's button on Enter.
+//        (c) History rows and the snackbar split the summary into a
+//        truncating text span plus a fixed trailing quote span when
+//        the summary ends with `"`.
+// 1.28 — Round 6 Item 4: wireHeaderCompact() updated for the new wide
+//        DOM order (List / Theme / Login in primary, Sync / Undo /
+//        Redo in secondary). Only Theme moves between groups; the
+//        reorder is insertBefore to preserve List/Theme/Login order
+//        when returning to wide. Undo/Redo and Sync stay in secondary
+//        in both modes.
 //
 // ================================================================================================
 //
@@ -36,21 +37,24 @@
 //   password input (Item 2). See 1.27.
 // - splitTrailingQuote(text) helper and its use in renderHistoryList()
 //   and showSnackbar() (Item 3). See 1.27.
+// - wireHeaderCompact() reworked so only Theme moves between header
+//   groups, matching the round-6 wide/portrait specs. See 1.28.
 //
 // ================================================================================================
 //
 // === FIXES ===
 //
 // - Prior rounds' fixes carried forward unchanged.
-// - Sync pill showed two refresh arrows because the short idle label
-//   also started with "↻". Removed the arrow from the short idle
-//   label and the no-sync label. See 1.27.
+// - Sync pill showed two refresh arrows. Removed the arrow from the
+//   short idle label and the no-sync label. See 1.27.
 // - Pressing Enter in the sign-in modal did nothing. Added a keydown
-//   handler on the shared email input and on the password input that
-//   fires the step's button click. See 1.27.
+//   handler on the shared email input and on the password input. See
+//   1.27.
 // - A summary ending in a quoted task name lost its closing quote to
-//   the ellipsis. Split the summary at the last character and render
-//   the trailing `"` as its own fixed span. See 1.27.
+//   the ellipsis. Split the summary at the last character. See 1.27.
+// - Header groups were out of step with the new wide DOM order; the
+//   round-3 wireHeaderCompact() fought the new starting positions.
+//   Reworked to move only Theme. See 1.28.
 //
 // ================================================================================================
 
@@ -58,13 +62,6 @@
    SMALL HELPERS
    ================================================================================================ */
 
-/**
- * Split a summary that ends with a closing double quote into
- * { head, tail }. If the summary does not end with `"`, tail is ''.
- * The caller renders `head` in a truncating span and `tail` in a fixed
- * non-truncating span right after it, so the closing quote stays
- * visible past the ellipsis.
- */
 function splitTrailingQuote(text) {
   const s = String(text || '');
   if (s.endsWith('"')) {
@@ -484,24 +481,21 @@ function wireEvents() {
 
 
 /* ================================================================================================
-   HEADER COMPACT (round 3 Item 2, updated for round 6 Item 4)
+   HEADER COMPACT (round 6 Item 4)
    ------------------------------------------------------------------------------------------------
-   Wide order:    List, Theme, Login, Sync, Undo, Redo.
-   Portrait order: Row 1: List, Login. Row 2: Theme, Sync, Undo, Redo.
+   Wide order (default):        List, Theme, Login, Sync, Undo, Redo
+     .header-primary   = List + Theme + Login
+     .header-secondary = Sync + Undo + Redo
 
-   The markup ships the wide order in DOM. wireHeaderCompact() moves
-   nodes between the two groups at the compact breakpoint so the two
-   modes reach different orders without CSS order hacks:
+   Portrait order (compact):    Row 1: List, Login. Row 2: Theme, Sync, Undo, Redo.
+     .header-primary   = List + Login
+     .header-secondary = Theme + Sync + Undo + Redo
 
-     Wide:
-       .header-primary   = List + Theme + Login
-       .header-secondary = Sync + Undo + Redo
-
-     Portrait (compact):
-       .header-primary   = List + Login
-       .header-secondary = Theme + Sync + Undo + Redo
-
-   The buttons keep their ids and listeners through the move.
+   Only Theme moves between groups. Undo, Redo and Sync stay in
+   .header-secondary in both modes; List and Login stay in
+   .header-primary. Theme's placement inside .header-primary is done
+   with insertBefore so the wide order List / Theme / Login is
+   preserved when a resize goes back to wide.
    ================================================================================================ */
 
 const HEADER_COMPACT_QUERY = '(max-width: 639.98px) and (orientation: portrait)';
@@ -510,12 +504,13 @@ function wireHeaderCompact() {
   const header = document.querySelector('.app-header');
   const primary = document.querySelector('.header-primary');
   const secondary = document.querySelector('.header-secondary');
+  if (!header || !primary || !secondary) return;
+
   const theme = document.getElementById('theme-select');
   const loginBtn = document.getElementById('auth-button');
+  const syncBtn = document.getElementById('sync-status-bar');
   const undoBtn = document.getElementById('undo-button');
   const redoBtn = document.getElementById('redo-button');
-  const syncBtn = document.getElementById('sync-status-bar');
-  if (!header || !primary || !secondary) return;
 
   const mql = window.matchMedia(HEADER_COMPACT_QUERY);
 
@@ -523,24 +518,38 @@ function wireHeaderCompact() {
     header.classList.toggle('header-compact', mql.matches);
 
     if (mql.matches) {
-      // Portrait: Row 1 = List + Login. Row 2 = Theme + Sync + Undo + Redo.
-      if (theme && theme.parentNode !== secondary) secondary.insertBefore(theme, secondary.firstChild);
-      if (syncBtn && syncBtn.parentNode !== secondary) secondary.insertBefore(syncBtn, theme ? theme.nextSibling : secondary.firstChild);
-      if (undoBtn && undoBtn.parentNode !== secondary) secondary.appendChild(undoBtn);
-      if (redoBtn && redoBtn.parentNode !== secondary) secondary.appendChild(redoBtn);
-
-      if (loginBtn && loginBtn.parentNode !== primary) primary.appendChild(loginBtn);
-    } else {
-      // Wide: List + Theme + Login on primary; Sync + Undo + Redo on secondary.
-      if (theme && theme.parentNode !== primary) {
-        if (loginBtn && loginBtn.parentNode === primary) primary.insertBefore(theme, loginBtn);
-        else primary.appendChild(theme);
+      // Portrait: Theme moves out of primary (into secondary, first slot).
+      if (theme && theme.parentNode !== secondary) {
+        secondary.insertBefore(theme, secondary.firstChild);
       }
-      if (loginBtn && loginBtn.parentNode !== primary) primary.appendChild(loginBtn);
+    } else {
+      // Wide: Theme returns to primary, before Login (so wide order is
+      // List / Theme / Login). If Login is not in primary for any
+      // reason, append Theme to primary.
+      if (theme && theme.parentNode !== primary) {
+        if (loginBtn && loginBtn.parentNode === primary) {
+          primary.insertBefore(theme, loginBtn);
+        } else {
+          primary.appendChild(theme);
+        }
+      }
+    }
 
-      if (syncBtn && syncBtn.parentNode !== secondary) secondary.insertBefore(syncBtn, secondary.firstChild);
-      if (undoBtn && undoBtn.parentNode !== secondary) secondary.appendChild(undoBtn);
-      if (redoBtn && redoBtn.parentNode !== secondary) secondary.appendChild(redoBtn);
+    // The other members of the two groups don't move. Undo, Redo, and
+    // Sync stay in .header-secondary; List and Login stay in
+    // .header-primary. If a future markup change moves any of them,
+    // this function is the one place to update.
+    if (syncBtn && syncBtn.parentNode !== secondary) {
+      secondary.appendChild(syncBtn);
+    }
+    if (undoBtn && undoBtn.parentNode !== secondary) {
+      secondary.appendChild(undoBtn);
+    }
+    if (redoBtn && redoBtn.parentNode !== secondary) {
+      secondary.appendChild(redoBtn);
+    }
+    if (loginBtn && loginBtn.parentNode !== primary) {
+      primary.appendChild(loginBtn);
     }
 
     window.dispatchEvent(new CustomEvent('sync-state-changed'));
@@ -669,10 +678,6 @@ function wireUndo() {
 
 /* ================================================================================================
    FAB MENU
-   ------------------------------------------------------------------------------------------------
-   History row order: [Undo N button] [list-name label] [summary text].
-   The summary is split at the last character when it ends with `"`,
-   so the closing quote stays visible after the ellipsis.
    ================================================================================================ */
 
 function renderHistoryList() {
@@ -790,11 +795,6 @@ function wireFabMenu() {
 
 /* ================================================================================================
    AUTH UI
-   ------------------------------------------------------------------------------------------------
-   Enter on the shared email input and on the password input fires the
-   current step's button click, so the user can submit from the keyboard
-   (desktop Enter or mobile Go) with the same validation and error
-   messages a tap produces.
    ================================================================================================ */
 
 function wireAuthEvents() {
@@ -934,9 +934,6 @@ function wireAuthEvents() {
     }
   });
 
-  // Round 6 Item 2: Enter submits the current step's button. Both the
-  // email and password inputs route to the visible step's button, so
-  // pressing Enter in either field submits whatever step is showing.
   function submitCurrentStep() {
     if (!dom.authStepPassword.hidden) {
       dom.authSignInPasswordBtn.click();
@@ -980,10 +977,6 @@ function wireAuthEvents() {
 
 /* ================================================================================================
    SYNC STATUS BAR
-   ------------------------------------------------------------------------------------------------
-   The icon span in the button is the ONLY refresh arrow. The short idle
-   label and no-sync label do NOT include a ↻. The full title/aria-label
-   stays "Last synced …" or "Not synced yet".
    ================================================================================================ */
 
 function wireSyncStatusBar() {
