@@ -11,40 +11,20 @@
 //
 // === REVISIONS ===
 //
-// 1.1 — Supabase Stage 3 auth modal wiring.
-// 1.2 — Auth client fix.
-// 1.3 — Auth refactor (link + password).
-// 1.4 — Header update race fix.
-// 1.5 — Password input guard.
-// 1.6 — Self-contained auth DOM cache.
-// 1.7 — Debug log for password sign-in (removed in 1.8).
-// 1.8 — Persistent-email modal.
-// 1.9 — Manual sync status bar.
-// 1.10 — Sync result handling.
-// 1.11 — Initial render sync event.
-// 1.12 — List rename sync fix.
-// 1.13 — Hide sync bar when signed out.
-// 1.14 — Force page reload on sync button click (later reverted).
-// 1.15 — Reload page immediately after successful sign-in (later reverted).
-// 1.16 — Clear hasSynced on sign-out.
-// 1.17 — Import sync and auth reload cleanup.
-// 1.18 — Delay import sync and remove page reloads.
-// 1.19 — Sync bar error state.
-// 1.20 — Service worker update check on sync bar tap.
-// 1.21 — Friendly sign-in network-error handling.
-// 1.22 — Two-layer undo + expandable menu + editable password-step email.
-// 1.23 — Redo button, history list labels, sync tap rebuilds picker,
-//        compact sync label (round 2).
-// 1.24 — Undo N on history rows and header group flip in compact (round 3).
-// 1.25 — Snackbar Undo to the front, surface undo failures (round 4).
-// 1.26 — History row Undo buttons to the front (round 5). Each row now
-//        renders [Undo N button] [list-name label] [summary text]
-//        instead of [list-name label] [summary text] [Undo N button].
-//        Only the button moved — the label and summary keep their
-//        relative positions. The row is now one line always; the
-//        accompanying CSS (section 18 of css/base.css) changes
-//        .history-item to flex-wrap: nowrap and adds ellipsis on the
-//        label. The snackbar is untouched.
+// 1.1 through 1.26 — prior rounds.
+// 1.27 — Round 6: sync single arrow, Enter submits sign-in, closing
+//        quote preserved when text truncates. (a) The sync pill's short
+//        idle label and no-sync label drop the leading "↻"; the icon
+//        span is the only refresh arrow, so idle reads "8:03 AM" and
+//        no-sync reads "—". The full title/aria-label stays "Last
+//        synced …". (b) The email input and the password input both
+//        submit their step's button on Enter. Same validation, same
+//        error messages, works from mobile Go/Enter. The "Use
+//        password instead" / "Use link instead" toggles are
+//        unaffected. (c) History rows and the snackbar split the
+//        summary into a truncating text span plus a fixed trailing
+//        quote span when the summary ends with `"`, so the closing
+//        quote stays visible after the ellipsis.
 //
 // ================================================================================================
 //
@@ -52,19 +32,47 @@
 //
 // - Initial creation. Extracted event handling and initialization from app.js.
 // - All prior additions carried forward unchanged.
+// - Enter-to-submit handlers on the shared email input and the
+//   password input (Item 2). See 1.27.
+// - splitTrailingQuote(text) helper and its use in renderHistoryList()
+//   and showSnackbar() (Item 3). See 1.27.
 //
 // ================================================================================================
 //
 // === FIXES ===
 //
 // - Prior rounds' fixes carried forward unchanged.
-// - History row layout: the Undo button used to sit at the end of the
-//   row with the list-name label first and the summary in the middle.
-//   The button is now first, then the list-name label, then the
-//   summary. Only the button's position moved; the label and summary
-//   keep their relative order. See 1.26.
+// - Sync pill showed two refresh arrows because the short idle label
+//   also started with "↻". Removed the arrow from the short idle
+//   label and the no-sync label. See 1.27.
+// - Pressing Enter in the sign-in modal did nothing. Added a keydown
+//   handler on the shared email input and on the password input that
+//   fires the step's button click. See 1.27.
+// - A summary ending in a quoted task name lost its closing quote to
+//   the ellipsis. Split the summary at the last character and render
+//   the trailing `"` as its own fixed span. See 1.27.
 //
 // ================================================================================================
+
+/* ================================================================================================
+   SMALL HELPERS
+   ================================================================================================ */
+
+/**
+ * Split a summary that ends with a closing double quote into
+ * { head, tail }. If the summary does not end with `"`, tail is ''.
+ * The caller renders `head` in a truncating span and `tail` in a fixed
+ * non-truncating span right after it, so the closing quote stays
+ * visible past the ellipsis.
+ */
+function splitTrailingQuote(text) {
+  const s = String(text || '');
+  if (s.endsWith('"')) {
+    return { head: s.slice(0, -1), tail: '"' };
+  }
+  return { head: s, tail: '' };
+}
+
 
 /* ================================================================================================
    PASTE BOX
@@ -476,7 +484,24 @@ function wireEvents() {
 
 
 /* ================================================================================================
-   HEADER COMPACT (round 3 Item 2)
+   HEADER COMPACT (round 3 Item 2, updated for round 6 Item 4)
+   ------------------------------------------------------------------------------------------------
+   Wide order:    List, Theme, Login, Sync, Undo, Redo.
+   Portrait order: Row 1: List, Login. Row 2: Theme, Sync, Undo, Redo.
+
+   The markup ships the wide order in DOM. wireHeaderCompact() moves
+   nodes between the two groups at the compact breakpoint so the two
+   modes reach different orders without CSS order hacks:
+
+     Wide:
+       .header-primary   = List + Theme + Login
+       .header-secondary = Sync + Undo + Redo
+
+     Portrait (compact):
+       .header-primary   = List + Login
+       .header-secondary = Theme + Sync + Undo + Redo
+
+   The buttons keep their ids and listeners through the move.
    ================================================================================================ */
 
 const HEADER_COMPACT_QUERY = '(max-width: 639.98px) and (orientation: portrait)';
@@ -485,29 +510,37 @@ function wireHeaderCompact() {
   const header = document.querySelector('.app-header');
   const primary = document.querySelector('.header-primary');
   const secondary = document.querySelector('.header-secondary');
+  const theme = document.getElementById('theme-select');
+  const loginBtn = document.getElementById('auth-button');
   const undoBtn = document.getElementById('undo-button');
   const redoBtn = document.getElementById('redo-button');
+  const syncBtn = document.getElementById('sync-status-bar');
   if (!header || !primary || !secondary) return;
 
   const mql = window.matchMedia(HEADER_COMPACT_QUERY);
 
   function apply() {
     header.classList.toggle('header-compact', mql.matches);
-    if (!undoBtn || !redoBtn) return;
 
     if (mql.matches) {
-      if (undoBtn.parentNode !== secondary) secondary.appendChild(undoBtn);
-      if (redoBtn.parentNode !== secondary) secondary.appendChild(redoBtn);
+      // Portrait: Row 1 = List + Login. Row 2 = Theme + Sync + Undo + Redo.
+      if (theme && theme.parentNode !== secondary) secondary.insertBefore(theme, secondary.firstChild);
+      if (syncBtn && syncBtn.parentNode !== secondary) secondary.insertBefore(syncBtn, theme ? theme.nextSibling : secondary.firstChild);
+      if (undoBtn && undoBtn.parentNode !== secondary) secondary.appendChild(undoBtn);
+      if (redoBtn && redoBtn.parentNode !== secondary) secondary.appendChild(redoBtn);
+
+      if (loginBtn && loginBtn.parentNode !== primary) primary.appendChild(loginBtn);
     } else {
-      const auth = document.getElementById('auth-button');
-      if (undoBtn.parentNode !== primary) {
-        if (auth && auth.parentNode === primary) primary.insertBefore(undoBtn, auth);
-        else primary.appendChild(undoBtn);
+      // Wide: List + Theme + Login on primary; Sync + Undo + Redo on secondary.
+      if (theme && theme.parentNode !== primary) {
+        if (loginBtn && loginBtn.parentNode === primary) primary.insertBefore(theme, loginBtn);
+        else primary.appendChild(theme);
       }
-      if (redoBtn.parentNode !== primary) {
-        if (auth && auth.parentNode === primary) primary.insertBefore(redoBtn, auth);
-        else primary.appendChild(redoBtn);
-      }
+      if (loginBtn && loginBtn.parentNode !== primary) primary.appendChild(loginBtn);
+
+      if (syncBtn && syncBtn.parentNode !== secondary) secondary.insertBefore(syncBtn, secondary.firstChild);
+      if (undoBtn && undoBtn.parentNode !== secondary) secondary.appendChild(undoBtn);
+      if (redoBtn && redoBtn.parentNode !== secondary) secondary.appendChild(redoBtn);
     }
 
     window.dispatchEvent(new CustomEvent('sync-state-changed'));
@@ -524,12 +557,6 @@ function wireHeaderCompact() {
 
 /* ================================================================================================
    UNDO / REDO
-   ------------------------------------------------------------------------------------------------
-   Snackbar after each history-recorded action with the Undo button FIRST (left) and the
-   summary text after it. The text truncates with ellipsis; the button never wraps to a
-   second line. Header #undo-button and #redo-button plus Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y
-   for desktop. The 'history-undo-failed' event from store.js is surfaced here so a
-   failed sequential undo is visible instead of silent.
    ================================================================================================ */
 
 const SNACKBAR_DURATION_MS = 5000;
@@ -539,6 +566,7 @@ function wireUndo() {
   const redoBtn = document.getElementById('redo-button');
   const snackbar = document.getElementById('undo-snackbar');
   const snackbarText = document.getElementById('undo-snackbar-text');
+  const snackbarTail = document.getElementById('undo-snackbar-tail');
   const snackbarBtn = document.getElementById('undo-snackbar-button');
   if (!snackbar || !snackbarText || !snackbarBtn) return;
 
@@ -553,7 +581,9 @@ function wireUndo() {
   }
 
   function showSnackbar(text, { hideButton = false } = {}) {
-    snackbarText.textContent = text || 'Action applied';
+    const { head, tail } = splitTrailingQuote(text || 'Action applied');
+    snackbarText.textContent = head;
+    if (snackbarTail) snackbarTail.textContent = tail;
     snackbar.hidden = false;
     snackbarBtn.hidden = Boolean(hideButton);
     if (snackbarTimer) clearTimeout(snackbarTimer);
@@ -640,10 +670,9 @@ function wireUndo() {
 /* ================================================================================================
    FAB MENU
    ------------------------------------------------------------------------------------------------
-   Each History row renders [Undo N button] [list-name label] [summary text]. Only the
-   button moved from its old end-of-row position — the label and summary keep their
-   relative order. The row is one line always: `.history-item` uses flex-wrap: nowrap
-   (section 18 of css/base.css); the summary truncates with ellipsis.
+   History row order: [Undo N button] [list-name label] [summary text].
+   The summary is split at the last character when it ends with `"`,
+   so the closing quote stays visible after the ellipsis.
    ================================================================================================ */
 
 function renderHistoryList() {
@@ -691,10 +720,14 @@ function renderHistoryList() {
     const listId = entry.listId || (entry.undoAction && entry.undoAction.listId);
     const listName = listId && state.lists[listId] ? state.lists[listId].name : null;
 
-    // 3. Summary text LAST.
+    // 3. Summary text LAST. Split the closing quote when present so it
+    //    survives truncation.
+    const rawSummary = entry.summary || entry.kind || 'Change';
+    const { head, tail } = splitTrailingQuote(rawSummary);
+
     const textEl = document.createElement('span');
     textEl.className = 'history-item-text';
-    textEl.textContent = entry.summary || entry.kind || 'Change';
+    textEl.textContent = head;
 
     li.appendChild(btn);
     if (listName) {
@@ -704,6 +737,12 @@ function renderHistoryList() {
       li.appendChild(labelEl);
     }
     li.appendChild(textEl);
+    if (tail) {
+      const tailEl = document.createElement('span');
+      tailEl.className = 'history-item-tail';
+      tailEl.textContent = tail;
+      li.appendChild(tailEl);
+    }
 
     listEl.appendChild(li);
   }
@@ -751,6 +790,11 @@ function wireFabMenu() {
 
 /* ================================================================================================
    AUTH UI
+   ------------------------------------------------------------------------------------------------
+   Enter on the shared email input and on the password input fires the
+   current step's button click, so the user can submit from the keyboard
+   (desktop Enter or mobile Go) with the same validation and error
+   messages a tap produces.
    ================================================================================================ */
 
 function wireAuthEvents() {
@@ -890,6 +934,31 @@ function wireAuthEvents() {
     }
   });
 
+  // Round 6 Item 2: Enter submits the current step's button. Both the
+  // email and password inputs route to the visible step's button, so
+  // pressing Enter in either field submits whatever step is showing.
+  function submitCurrentStep() {
+    if (!dom.authStepPassword.hidden) {
+      dom.authSignInPasswordBtn.click();
+    } else {
+      dom.authSendEmailBtn.click();
+    }
+  }
+
+  dom.authEmailInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitCurrentStep();
+    }
+  });
+
+  dom.authPasswordInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      submitCurrentStep();
+    }
+  });
+
   window.addEventListener('supabase-auth-changed', (e) => {
     const session = e.detail.session;
     if (session) {
@@ -911,6 +980,10 @@ function wireAuthEvents() {
 
 /* ================================================================================================
    SYNC STATUS BAR
+   ------------------------------------------------------------------------------------------------
+   The icon span in the button is the ONLY refresh arrow. The short idle
+   label and no-sync label do NOT include a ↻. The full title/aria-label
+   stays "Last synced …" or "Not synced yet".
    ================================================================================================ */
 
 function wireSyncStatusBar() {
@@ -929,8 +1002,8 @@ function wireSyncStatusBar() {
 
   function idleShortLabel() {
     const lastSync = parseInt(localStorage.getItem(LAST_SYNC_KEY), 10);
-    if (!lastSync) return '↻ —';
-    return `↻ ${formatTime(lastSync)}`;
+    if (!lastSync) return '—';
+    return formatTime(lastSync);
   }
 
   function idleFullLabel() {
