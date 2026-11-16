@@ -36,6 +36,10 @@
 //        set before clearing history, so focus-driven TOKEN_REFRESHED
 //        no longer wipes it).
 //
+// 1.34 — Cache bump for the round-8 fixes: History panel height on mobile
+//        (css/base.css) and History row trailing-space trim (js/ui.js).
+//        CACHE_NAME goes from todo-cache-v42 to todo-cache-v43.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -92,10 +96,11 @@
 // - v41 → v42: closing-quote zero-gap + history survives window/app
 //              switches + one shared Undo/Redo pill + History rows
 //              aligned on a CSS grid.
+// - v42 → v43: History panel mobile height + History row trailing-space trim.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v42';
+const CACHE_NAME = 'todo-cache-v43';
 
 const ASSETS_TO_CACHE = [
   './',
