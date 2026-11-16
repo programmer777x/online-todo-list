@@ -252,6 +252,24 @@
 //       menu, history list styles, and the Item 3 sync-bar pill restyle
 //       that keeps the [hidden] rule intact).
 //
+// 1.27 — Cache bump for the round-2 fixes: snackbar dispatch, history
+//       rules, sync rebuilds picker, header layout, redo. CACHE_NAME goes
+//       from todo-cache-v36 to todo-cache-v37 so returning clients fetch
+//       the updated js/store.js (recordHistory dispatches
+//       'history-recorded', every undoAction carries a listId, dead
+//       entries are dropped instead of left stuck, undo prunes later
+//       entries for the same task, hydrateFromRemote clears history and
+//       redo, and every entry carries a redoAction with a separate redo
+//       stack), js/ui.js (redo button + Ctrl+Y / Ctrl+Shift+Z, history
+//       rows show their list name, the sync-bar tap calls
+//       renderListSwitcher() alongside render(), and a .header-compact
+//       class plus short "↻ {time}" idle label for mobile portrait),
+//       index.html (redo button + .header-primary / .header-secondary
+//       groups + .header-pill class on undo/redo/auth/sync), and
+//       css/base.css (one-row/two-row header layout, undo/redo pill
+//       styling, and the sync pill's reposition into the header row with
+//       its old standalone-row tuning removed).
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -451,7 +469,7 @@
 //   Changes list) backed by js/store.js history recording. See 1.26.
 // - The header grew with every new control. Added a ⋯ FAB menu (bottom-
 //   right) whose first tenant is the Recent Changes list. Sync bar stays
-//   under the header. See 1.26.
+//   in the header row. See 1.26.
 // - The sync bar looked like its own stray section (bare centered muted
 //   text). Restyled as a pill matching the list-switcher / auth-button
 //   treatment, keeping the [hidden] rule. See 1.26.
@@ -464,10 +482,51 @@
 //   and css/base.css. Without this bump, returning clients would stay on
 //   v35 and none of the undo / menu / pill / editable-email changes would
 //   reach them.
+// - The undo snackbar never appeared because store.js's recordHistory()
+//   did not dispatch 'history-recorded'. Both the History panel (re-rendered
+//   on open) and Ctrl+Z (which calls undoLast() directly) worked without it,
+//   which is why the bug was invisible in those paths. recordHistory() now
+//   dispatches 'history-recorded' with { summary, id } after saving. See 1.27.
+// - History entries were not scoped to a list. An undoAction carried only
+//   { op, taskId }, so applyUndoAction() applied it to whatever list was
+//   active when the user hit Undo. After a sign-in swapped the loaded set,
+//   pre-login entries got applied to the wrong list. Every undoAction now
+//   carries a listId, and applyUndoAction() applies to that list. See 1.27.
+// - Dead history entries stayed in the list forever. If an entry's target
+//   task or list was already gone, undo failed silently and the entry could
+//   never be applied. applyUndoAction() now returns false in that case and
+//   the entry is dropped. Undoing an entry also prunes later entries for
+//   the SAME task (they were built on the reverted change). See 1.27.
+// - History carried stale entries across a data replacement. Sign-in
+//   loads a different list set, but old history (recorded against the
+//   pre-login lists) stayed in localStorage. hydrateFromRemote() now calls
+//   clearHistory() when it replaces the loaded data. See 1.27.
+// - The sync button did not rebuild the list picker. syncNow() →
+//   fetchRemoteState() → hydrateFromRemote() → render() only re-renders
+//   tasks; the picker was untouched until a full page reload. The sync-bar
+//   tap now calls renderListSwitcher() alongside render() after a
+//   successful syncNow(), matching what the sign-in path already does.
+//   See 1.27.
+// - The header was visually unorganized on mobile portrait: the sync pill
+//   sat on its own row and the ↩ glyph floated between pills. The markup
+//   now groups the header into .header-primary (List / Undo / Redo / Login)
+//   and .header-secondary (Theme / Sync), and a .header-compact class
+//   (toggled by wireHeaderCompact() at the same query) stacks the groups
+//   into two rows in portrait. See 1.27.
+// - No redo existed. Every entry now records a redoAction alongside the
+//   undoAction, and a separate redo stack is pushed on undo and cleared
+//   on any new recorded action or on hydrateFromRemote(). The header ↪
+//   button and Ctrl+Y / Ctrl+Shift+Z call window.store.redoLast(). See
+//   1.27.
+// - Bumped CACHE_NAME from `todo-cache-v36` to `todo-cache-v37` so browsers
+//   fetch the round-2 fixes above: js/store.js, js/ui.js, index.html, and
+//   css/base.css. Without this bump, returning clients would stay on v36
+//   and none of the snackbar / history-rules / picker-rebuild / header-
+//   layout / redo changes would reach them.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v36';
+const CACHE_NAME = 'todo-cache-v37';
 
 const ASSETS_TO_CACHE = [
   './',
