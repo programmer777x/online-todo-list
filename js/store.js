@@ -19,64 +19,31 @@
 //
 // === REVISIONS ===
 //
-// 1.1 — Supabase Stage 3. Added hydrateFromRemote() so js/sync.js can replace
-//       the local state with cloud data after a successful load-time fetch.
-//       The function is exposed at window.store.hydrateFromRemote so the sync
-//       module can call it. Cloud-empty is a no-op — local state is left
-//       intact for the upcoming migration dialog to handle.
-//
-// 1.2 — Supabase Stage 3, mutation broadcast. saveState() now dispatches
-//       'sync-list-change' and 'sync-task-change' CustomEvents on every
-//       call, so js/sync.js can catch every local mutation (add, rename,
-//       delete, reorder, toggle, edit) and push it to Supabase. The
-//       broadcast is a lightweight fan-out (one list event, one task event
-//       per task in each list), deliberately broad so no mutation path can
-//       be missed; batching is deferred until mutation sync is confirmed
-//       working end-to-end.
-//
-// 1.3 — Precise mutation broadcast. The 1.2 broad loop inside saveState()
-//       fanned out every list and every task on every save, so a single
-//       drag or keystroke produced hundreds of Supabase update requests
-//       (observed as a delayed console and a burst of CORS-blocked
-//       requests on Vercel preview). saveState() is reverted to its
-//       original local-storage-only form, and each mutation function now
-//       dispatches only its own change: addTask/removeTask/toggleDone/
-//       updateText/moveTask/reorderTask emit sync-task-change (insert,
-//       delete, or update as appropriate), and createList/deleteList emit
-//       sync-list-change.
-//
-// 1.4 — Two-layer undo history. Added HISTORY_KEY ('todolist.v1.history')
-//       with a cap of HISTORY_MAX (20) entries. recordHistory(entry) is
-//       called from each mutation function just before the state change
-//       lands, storing the inverse operation so the UI can revert that
-//       one action. undoLast() pops and applies the most recent entry;
-//       undoHistoryEntry(id) applies and removes one specific entry by
-//       id (used by the recent-changes list's per-row Undo). Both go
-//       through the existing store mutations so the undo syncs like any
-//       other change.
-//
+// 1.1 — hydrateFromRemote() for js/sync.js.
+// 1.2 — saveState() broadcast to sync.js (later narrowed in 1.3).
+// 1.3 — Precise mutation broadcast from each mutation function.
+// 1.4 — Two-layer undo history: HISTORY_KEY / HISTORY_MAX, recordHistory,
+//       undoLast, undoHistoryEntry (per-entry model).
 // 1.5 — History dispatch + list scoping + dead-entry pruning + redo.
-//       1) recordHistory() dispatches 'history-recorded' after saving.
-//       2) Every undoAction carries a listId; applyUndoAction() reads
-//          that listId and applies the change to that list, not to
-//          state.activeListId.
-//       3) If the target task or list no longer exists, the entry is
-//          dropped instead of left stuck.
-//       4) hydrateFromRemote() clears the history when it replaces the
-//          loaded data set.
-//       5) Every entry carries a redoAction; undoing pushes the entry
-//          onto a separate redo stack, redoLast() pops and re-applies it.
-//
-// 1.6 — Sequential undo from newest to target. undoHistoryEntry(id) now
-//       unwinds from the newest entry down to and including the target,
-//       newest-first, one at a time. The round-2 same-task prune rule is
-//       removed — the unwind replaces it, so undoing entry N only drops
-//       the entries it actually unwound. Dead entries inside the unwind
-//       are skipped (removed) and the unwind continues, so one dead
-//       target does not abort the chain. Undone entries are pushed onto
-//       the redo stack in unwind order, so Redo re-applies them oldest-
-//       first, one per tap. undoLast() still undoes exactly the newest
-//       one entry (snackbar / header ↩ / Ctrl+Z unchanged).
+//       recordHistory dispatches 'history-recorded'; every undoAction
+//       carries a listId; dead entries are dropped; hydrateFromRemote
+//       clears history; every entry carries a redoAction; redo stack
+//       + redoLast / clearRedo.
+// 1.6 — Sequential undo. undoHistoryEntry(id) unwinds from the newest
+//       entry down to and including the target, newest-first, one at a
+//       time. Dead entries are skipped (removed) and the unwind
+//       continues. Undone entries are pushed onto the redo stack in
+//       unwind order. Round-2 same-task prune rule removed.
+// 1.7 — Silent dead-wipe fix. The 1.6 unwind returns true even when
+//       every entry was dropped as dead, so a chain of failures wiped
+//       the history and re-rendered as if the undo had worked. Three
+//       changes: (a) applyUndoAction() falls back to the entry's own
+//       listId (then the active list) when the action's undo payload
+//       has no listId, so pre-round-2 entries can still be undone;
+//       (b) failing entries stay in the history and are surfaced, only
+//       genuinely-missing targets are dropped; (c) undoHistoryEntry
+//       returns { ok, undone, failed, dropped } and dispatches
+//       'history-undo-failed' when any entry could not be applied.
 //
 // ================================================================================================
 //
@@ -87,45 +54,41 @@
 // - `reparentTask()` — data-layer half of cross-list drag.
 // - `hydrateFromRemote(remoteLists, remoteTasks)` — load-time hydration path
 //   for signed-in users. Clears history and redo on successful replace.
-// - Precise mutation dispatches for every store mutation. See v1.3.
 // - HISTORY_KEY constant, HISTORY_MAX cap, lazily-loaded history array,
 //   loadHistory() / saveHistory() / recordHistory(), undoLast(),
 //   undoHistoryEntry(id), and the redo stack + redoLast() / clearRedo().
-//   Every mutation function records the inverse operation (and its
-//   forward twin) before applying its state change. Exposed on
-//   window.store alongside hydrateFromRemote.
 // - recordHistory() dispatches 'history-recorded' after save. See v1.5.
-// - Sequential unwind in undoHistoryEntry(id): finds the target, then
-//   pops newest-first through history until (and including) the target,
-//   applying each entry's undoAction to its recorded list, skipping dead
-//   entries (removing them), and pushing each successfully undone entry
-//   onto the redo stack in unwind order. See v1.6.
+// - Sequential unwind in undoHistoryEntry(id). See v1.6.
+// - applyUndoAction's listId fallback (action.listId → entry.listId →
+//   activeListId). See v1.7.
+// - Structured return shape from undoHistoryEntry() ({ ok, undone,
+//   failed, dropped }). See v1.7.
+// - 'history-undo-failed' event dispatched when any entry in the chain
+//   could not be applied, with { failedCount, undoneCount }. See v1.7.
 //
 // ================================================================================================
 //
 // === FIXES ===
 //
-// - `bootstrapFreshState()` now seeds the default list with the onboarding demo.
-// - Local mutations (add, rename, delete, reorder, toggle, edit) were saved
-//   to localStorage and stopped there — sync.js never learned about them,
-//   so the cloud stayed empty for a signed-in user. The saveState()
-//   broadcast closes that gap.
-// - The 1.2 broadcast inside saveState() spammed Supabase. saveState() is
-//   back to a plain localStorage write; each mutation function now emits
-//   only its own change.
-// - The undo snackbar never appeared (recordHistory() did not dispatch
-//   'history-recorded'). Fixed in v1.5.
-// - History entries were not scoped to a list. Entries now carry listId;
-//   applyUndoAction() applies to the recorded list. Fixed in v1.5.
-// - Dead entries never went away. The apply path returns false and the
-//   entry is dropped. Fixed in v1.5.
-// - History carried stale entries across a data replacement.
-//   hydrateFromRemote() now clears history. Fixed in v1.5.
-// - The round-2 same-task prune rule dropped later same-task entries
-//   from a single undo in ways that did not match user expectation. The
-//   round-3 sequential unwind replaces it: tapping Undo on entry N
-//   undoes entries newer than N plus N itself, newest-first. Nothing
-//   else vanishes. Fixed in v1.6.
+// - `bootstrapFreshState()` seeds the onboarding demo list.
+// - Local mutations now fan out through saveState()'s broadcast (narrowed
+//   in 1.3 to per-mutation events).
+// - The 1.2 broadcast spammed Supabase. Fixed in 1.3.
+// - The undo snackbar never appeared (recordHistory did not dispatch
+//   'history-recorded'). Fixed in 1.5.
+// - History entries were not scoped to a list. Fixed in 1.5.
+// - Dead entries never went away. Fixed in 1.5.
+// - History carried stale entries across a data replacement. Fixed in 1.5.
+// - The round-2 same-task prune rule dropped entries in confusing ways.
+//   Replaced by sequential unwind in 1.6.
+// - Sequential undo could silently wipe history without undoing tasks.
+//   When every applyUndoAction in the chain returned false, every entry
+//   was treated as dead, the history was rewritten to only the older
+//   entries, and undoHistoryEntry still returned true. The UI re-rendered
+//   as if the undo worked. Fixed in 1.7 with three changes: listId
+//   fallback for pre-round-2 entries, failing entries preserved and
+//   surfaced instead of dropped, and a structured return shape plus a
+//   'history-undo-failed' event for the UI to react to.
 //
 // ================================================================================================
 
@@ -364,22 +327,20 @@ function saveState() {
    UNDO / REDO HISTORY
    ------------------------------------------------------------------------------------------------
    A capped list of the last HISTORY_MAX undoable actions, persisted in localStorage.
-   Each entry is { id, kind, summary, listId, taskId, undoAction, redoAction } where
-   undoAction is the inverse the UI applies to revert, and redoAction is the forward
-   operation to re-apply it after an undo.
+   Each entry is { id, kind, summary, listId, taskId, undoAction, redoAction }.
 
-   Sequential undo (LIFO): undoHistoryEntry(id) finds the target in the history and
-   unwinds from the newest entry down to and including the target, newest-first,
-   one at a time. Each successfully undone entry is pushed onto the redo stack, so
-   Redo re-applies them oldest-first, one per tap. undoLast() (snackbar / header ↩ /
-   Ctrl+Z) still undoes exactly the newest one entry.
+   Sequential undo (LIFO): undoHistoryEntry(id) finds the target and unwinds from
+   the newest entry down to and including the target, newest-first. Successfully
+   undone entries are pushed onto the redo stack so a subsequent Redo re-applies
+   them oldest-first, one per tap.
 
-   Dead-entry handling: if an entry's target task or list is gone, the entry is
-   removed from the history and the unwind continues — one dead entry does not abort
-   the chain.
+   Failure handling (v1.7): an entry whose target is genuinely missing (task or
+   list gone) is dropped; any other failure preserves the entry and surfaces a
+   'history-undo-failed' event. The return shape is
+   { ok, undone, failed, dropped } so callers can react to partial success.
 
-   Redo stack: separate in-memory stack (not persisted). Cleared on any new recorded
-   action, on hydrateFromRemote(), and on clearHistory().
+   Redo stack: separate in-memory stack (not persisted). Cleared on any new
+   recorded action, on hydrateFromRemote(), and on clearHistory().
    ================================================================================================ */
 
 const HISTORY_KEY = 'todolist.v1.history';
@@ -440,145 +401,175 @@ function recordHistory(entry) {
 
   window.dispatchEvent(new CustomEvent('history-recorded', { detail: { summary: item.summary, id: item.id } }));
 
-  // Any new recorded action invalidates the redo stack.
   _redoStack = [];
 
   return item;
 }
 
-function applyUndoAction(action) {
-  if (!action || typeof action !== 'object') return false;
-  if (!action.listId) return false;
-  const targetList = state.lists[action.listId];
-  if (!targetList) return false;
+/**
+ * Apply an undo (or redo) action.
+ *
+ * @param {object} action - The stored undoAction / redoAction.
+ * @param {string} [fallbackListId] - If the action itself carries no listId
+ *   (pre-round-2 entries), fall back to the entry's own listId.
+ * @returns {{ applied: boolean, reason: 'ok' | 'no-list' | 'no-target' | 'no-op' }}
+ *   'no-list' / 'no-target' are genuine "dead entry" reasons — the target is
+ *   missing. 'no-op' means the action was well-formed but the state already
+ *   matched it (e.g. toggling to the same done value); that is not a dead
+ *   entry, and callers should preserve it.
+ */
+function applyUndoActionDetailed(action, fallbackListId) {
+  if (!action || typeof action !== 'object') {
+    return { applied: false, reason: 'no-target' };
+  }
+  const listId = action.listId || fallbackListId || state.activeListId;
+  if (!listId) {
+    return { applied: false, reason: 'no-list' };
+  }
+  const targetList = state.lists[listId];
+  if (!targetList) {
+    return { applied: false, reason: 'no-list' };
+  }
 
   switch (action.op) {
     case 'restore-task': {
-      if (!action.task) return false;
-      if (targetList.tasks.some((t) => t.id === action.task.id)) return false;
+      if (!action.task) return { applied: false, reason: 'no-target' };
+      if (targetList.tasks.some((t) => t.id === action.task.id)) {
+        return { applied: false, reason: 'no-op' };
+      }
       targetList.tasks.push({ ...action.task });
-      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'insert', task: { ...action.task, listId: action.listId } } }));
+      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'insert', task: { ...action.task, listId } } }));
       saveState();
-      return true;
+      return { applied: true, reason: 'ok' };
     }
     case 'restore-many': {
-      if (!Array.isArray(action.tasks)) return false;
+      if (!Array.isArray(action.tasks)) return { applied: false, reason: 'no-target' };
       const existing = new Set(targetList.tasks.map((t) => t.id));
       let restored = false;
       for (const t of action.tasks) {
         if (existing.has(t.id)) continue;
         targetList.tasks.push({ ...t });
-        window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'insert', task: { ...t, listId: action.listId } } }));
+        window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'insert', task: { ...t, listId } } }));
         restored = true;
       }
       if (restored) saveState();
-      return restored;
+      return restored
+        ? { applied: true, reason: 'ok' }
+        : { applied: false, reason: 'no-op' };
     }
     case 'set-text': {
       const t = targetList.tasks.find((x) => x.id === action.taskId);
-      if (!t) return false;
+      if (!t) return { applied: false, reason: 'no-target' };
+      if (t.text === action.text) return { applied: false, reason: 'no-op' };
       t.text = action.text;
-      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId: action.listId } } }));
+      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId } } }));
       saveState();
-      return true;
+      return { applied: true, reason: 'ok' };
     }
     case 'set-done': {
       const t = targetList.tasks.find((x) => x.id === action.taskId);
-      if (!t) return false;
+      if (!t) return { applied: false, reason: 'no-target' };
+      if (t.done === Boolean(action.done)) return { applied: false, reason: 'no-op' };
       t.done = Boolean(action.done);
-      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId: action.listId } } }));
+      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId } } }));
       saveState();
-      return true;
+      return { applied: true, reason: 'ok' };
     }
     case 'set-move': {
       const t = targetList.tasks.find((x) => x.id === action.taskId);
-      if (!t) return false;
+      if (!t) return { applied: false, reason: 'no-target' };
       t.section = action.section;
       t.parentId = action.parentId || null;
-      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId: action.listId } } }));
+      window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId } } }));
       saveState();
-      return true;
+      return { applied: true, reason: 'ok' };
     }
     case 'delete-task': {
       const t = targetList.tasks.find((x) => x.id === action.taskId);
-      if (!t) return false;
-      removeTaskSilent(action.taskId, action.listId);
-      return true;
+      if (!t) return { applied: false, reason: 'no-target' };
+      removeTaskSilent(action.taskId, listId);
+      return { applied: true, reason: 'ok' };
     }
     case 'reorder': {
-      if (!Array.isArray(action.siblings)) return false;
+      if (!Array.isArray(action.siblings)) return { applied: false, reason: 'no-target' };
       let touched = false;
       for (const { id, createdAt } of action.siblings) {
         const t = targetList.tasks.find((x) => x.id === id);
-        if (t) { t.createdAt = createdAt; touched = true; }
+        if (t && t.createdAt !== createdAt) { t.createdAt = createdAt; touched = true; }
       }
-      if (!touched) return false;
+      if (!touched) return { applied: false, reason: 'no-op' };
       for (const { id } of action.siblings) {
         const t = targetList.tasks.find((x) => x.id === id);
         if (!t) continue;
-        window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId: action.listId } } }));
+        window.dispatchEvent(new CustomEvent('sync-task-change', { detail: { op: 'update', task: { ...t, listId } } }));
       }
       saveState();
-      return true;
+      return { applied: true, reason: 'ok' };
     }
     default:
-      return false;
+      return { applied: false, reason: 'no-target' };
   }
 }
 
-function applyRedoAction(action) {
-  if (!action || typeof action !== 'object') return false;
-  return applyUndoAction(action);
+function applyUndoAction(action, fallbackListId) {
+  return applyUndoActionDetailed(action, fallbackListId).applied;
+}
+
+function applyRedoAction(action, fallbackListId) {
+  return applyUndoActionDetailed(action, fallbackListId).applied;
 }
 
 /**
- * Sequential unwind: undo the given target entry AND every entry newer than it,
- * newest-first. Each successfully undone entry is pushed onto the redo stack
- * (in that newest-first unwind order), so a subsequent Redo re-applies them
- * oldest-first, one per tap.
+ * Sequential unwind: undo the target entry AND every entry newer than it,
+ * newest-first.
  *
- * A dead entry (target task or list gone) is removed and skipped; the unwind
- * continues through the rest of the chain.
+ * Returns an object { ok, undone, failed, dropped }:
+ *   - ok: true if at least one entry was undone.
+ *   - undone: entries successfully undone (also pushed onto the redo stack).
+ *   - failed: entries that could not be applied for a non-dead reason
+ *             (state already matched, unknown op). These STAY in the
+ *             history and are surfaced via 'history-undo-failed'.
+ *   - dropped: entries whose target was genuinely missing (task / list
+ *              gone). These are removed from the history.
  *
- * Returns true if at least one entry was undone (or removed as dead), false
- * if the target was not found.
+ * The return value is truthy overall (it is an object), so existing callers
+ * that check `if (result)` keep their "did something happen" behavior; UI
+ * code that needs the breakdown reads the fields.
  */
 function undoHistoryEntry(id) {
   const list = loadHistory();
   const targetIdx = list.findIndex((e) => e.id === id);
-  if (targetIdx === -1) return false;
+  if (targetIdx === -1) {
+    return { ok: false, undone: [], failed: [], dropped: [] };
+  }
 
-  // Entries to unwind, newest-first. `list.slice(targetIdx)` is oldest-first
-  // starting at the target; reversing gives newest-first including the target.
   const chain = list.slice(targetIdx).reverse();
 
-  const undoneEntries = []; // in unwind order (newest-first)
+  const undoneEntries = [];
+  const failedEntries = [];
   const deadIds = new Set();
+  const droppedEntries = [];
 
   for (const entry of chain) {
-    const ok = applyUndoAction(entry.undoAction);
-    if (ok) {
+    const result = applyUndoActionDetailed(entry.undoAction, entry.listId);
+    if (result.applied) {
       undoneEntries.push(entry);
-    } else {
-      // Dead target (task / list gone). Drop it from history; do not abort.
+    } else if (result.reason === 'no-target' || result.reason === 'no-list') {
+      // Genuinely missing target — the entry cannot be applied ever again.
       deadIds.add(entry.id);
+      droppedEntries.push(entry);
+    } else {
+      // 'no-op' or unknown — the entry is well-formed but the state
+      // matched already; keep it visible so the user knows what happened.
+      failedEntries.push(entry);
     }
   }
 
-  // Rewrite history: keep entries strictly older than the target, minus any
-  // that were already removed as dead in the unwind.
+  // Preserve entries older than the target; drop only the dead ones in the chain.
   const remaining = list.slice(0, targetIdx).filter((e) => !deadIds.has(e.id));
 
-  // Push undone entries onto the redo stack in reverse-unwind order so that
-  // popping the redo stack yields oldest-first (i.e. re-application order).
-  // undoneEntries is newest-first; reversed is oldest-first. push() appends
-  // to the end, so pushing oldest-first and then popping from the end gives
-  // oldest-first re-application — wait: that would yield newest-last-popped.
-  // To get oldest-first re-application on successive redoLast() calls, push
-  // the LIFO order onto the stack: redoLast() pops from the end, so the item
-  // pushed last is popped first. The first thing we want to pop is the
-  // OLDEST undone entry. So push newest-first (which leaves the oldest at
-  // the end of the array → popped first).
+  // Push undone entries onto the redo stack in unwind order (newest-first).
+  // redoLast() pops from the end, so the oldest undone entry pops first.
   for (const e of undoneEntries) {
     _redoStack.push(e);
   }
@@ -586,21 +577,38 @@ function undoHistoryEntry(id) {
   _history = remaining;
   saveHistory();
 
-  return undoneEntries.length > 0 || deadIds.size > 0;
+  if (failedEntries.length > 0) {
+    console.warn('Sync: Some history entries could not be undone.',
+      failedEntries.map((e) => `${e.kind} ${e.summary} (${e.id})`));
+    window.dispatchEvent(new CustomEvent('history-undo-failed', {
+      detail: {
+        failedCount: failedEntries.length,
+        undoneCount: undoneEntries.length,
+        droppedCount: droppedEntries.length,
+      },
+    }));
+  }
+
+  return {
+    ok: undoneEntries.length > 0,
+    undone: undoneEntries,
+    failed: failedEntries,
+    dropped: droppedEntries,
+  };
 }
 
 function undoLast() {
   const list = loadHistory();
   if (list.length === 0) return false;
-  return undoHistoryEntry(list[list.length - 1].id);
+  const result = undoHistoryEntry(list[list.length - 1].id);
+  return result.ok;
 }
 
 function redoLast() {
   if (!_redoStack || _redoStack.length === 0) return false;
   const entry = _redoStack.pop();
-  const ok = applyRedoAction(entry.redoAction);
+  const ok = applyRedoAction(entry.redoAction, entry.listId);
   if (!ok) return false;
-  // Re-record the entry so it can be undone again.
   const list = loadHistory();
   const redoItem = {
     id: generateId(),
@@ -938,7 +946,6 @@ function hydrateFromRemote(remoteLists, remoteTasks) {
 
   saveState();
 
-  // Data set replaced — the old history refers to data that is no longer loaded.
   clearHistory();
 
   if (typeof render === 'function') {
