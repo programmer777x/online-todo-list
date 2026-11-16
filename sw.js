@@ -21,17 +21,20 @@
 //
 // 1.1 through 1.32 — prior rounds. See 1.33 for the current bump.
 //
-// 1.33 — Cache bump for the round-7 fixes: closing-quote gap, history
-//        survives window/app switches, Undo/Redo pills. CACHE_NAME
-//        goes from todo-cache-v41 to todo-cache-v42 so returning
-//        clients fetch the updated css/base.css (the text span in
-//        history rows and the snackbar is now shrink-only, so the
-//        trailing quote sits flush against the visible text; the
-//        Undo/Redo pill explicitly sets border+background on the more
-//        specific selector so the pill look wins over .icon-button)
-//        and the updated js/store.js (hydrateFromRemote() compares the
-//        incoming data set to the current one before clearing history,
-//        so a focus-driven TOKEN_REFRESHED no longer wipes it).
+// 1.33 — Cache bump for the round-7 fixes: closing-quote zero-gap,
+//        history survives window/app switches, Undo/Redo share one
+//        pill, History rows align on a shared grid. CACHE_NAME goes
+//        from todo-cache-v41 to todo-cache-v42 so returning clients
+//        fetch the updated index.html (single .header-pill-group
+//        holding Undo + Redo), css/base.css (tail spans get a
+//        negative left margin to zero the gap; .header-pill-group /
+//        .pill-group-button styles; .history-item switches from flex
+//        to four-column CSS grid), js/ui.js (History rows always
+//        render the label and tail cells so the grid columns line up;
+//        wireHeaderCompact() moves the pill group as a unit), and
+//        js/store.js (hydrateFromRemote() compares the incoming data
+//        set before clearing history, so focus-driven TOKEN_REFRESHED
+//        no longer wipes it).
 //
 // ================================================================================================
 //
@@ -86,8 +89,9 @@
 // - v39 → v40: History row Undo buttons to the front + rows never wrap.
 // - v40 → v41: sync single arrow + Enter submits sign-in + closing quote
 //              preserved + per-mode header order with Undo/Redo pills.
-// - v41 → v42: closing-quote gap + history survives window/app switches +
-//              Undo/Redo pill border and background at rest.
+// - v41 → v42: closing-quote zero-gap + history survives window/app
+//              switches + one shared Undo/Redo pill + History rows
+//              aligned on a CSS grid.
 //
 // ================================================================================================
 
