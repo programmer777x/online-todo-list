@@ -19,23 +19,19 @@
 //
 // === REVISIONS ===
 //
-// 1.1 through 1.31 — prior rounds. See 1.32 for the current bump.
+// 1.1 through 1.32 — prior rounds. See 1.33 for the current bump.
 //
-// 1.32 — Cache bump for the round-6 fixes: single sync arrow, Enter
-//        submits sign-in, closing quote preserved on truncation, and
-//        the per-mode header order with Undo/Redo as pills.
-//        CACHE_NAME goes from todo-cache-v40 to todo-cache-v41 so
-//        returning clients fetch the updated js/ui.js (short idle and
-//        no-sync labels drop the leading arrow; Enter on the sign-in
-//        email and password inputs submits the current step; history
-//        rows and the snackbar split the trailing quote into a fixed
-//        span; wireHeaderCompact() moves only Theme between groups so
-//        the new wide DOM order survives load), index.html (new
-//        header group order List/Theme/Login + Sync/Undo/Redo, the
-//        snackbar tail span, sync pill text starts as "—"), and
-//        css/base.css (.undo-snackbar-tail and .history-item-tail
-//        fixed spans, Undo/Redo pill sizing, compact sync pill no
-//        longer stretches).
+// 1.33 — Cache bump for the round-7 fixes: closing-quote gap, history
+//        survives window/app switches, Undo/Redo pills. CACHE_NAME
+//        goes from todo-cache-v41 to todo-cache-v42 so returning
+//        clients fetch the updated css/base.css (the text span in
+//        history rows and the snackbar is now shrink-only, so the
+//        trailing quote sits flush against the visible text; the
+//        Undo/Redo pill explicitly sets border+background on the more
+//        specific selector so the pill look wins over .icon-button)
+//        and the updated js/store.js (hydrateFromRemote() compares the
+//        incoming data set to the current one before clearing history,
+//        so a focus-driven TOKEN_REFRESHED no longer wipes it).
 //
 // ================================================================================================
 //
@@ -90,10 +86,12 @@
 // - v39 → v40: History row Undo buttons to the front + rows never wrap.
 // - v40 → v41: sync single arrow + Enter submits sign-in + closing quote
 //              preserved + per-mode header order with Undo/Redo pills.
+// - v41 → v42: closing-quote gap + history survives window/app switches +
+//              Undo/Redo pill border and background at rest.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v41';
+const CACHE_NAME = 'todo-cache-v42';
 
 const ASSETS_TO_CACHE = [
   './',
