@@ -40,6 +40,10 @@
 //        (css/base.css) and History row trailing-space trim (js/ui.js).
 //        CACHE_NAME goes from todo-cache-v42 to todo-cache-v43.
 //
+// 1.35 — Cache bump for the Round 8 Item 2 correction: History row text
+//        column changed to max-content so the closing quote sits flush
+//        against the text (css/base.css). CACHE_NAME goes from v43 to v44.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -97,10 +101,11 @@
 //              switches + one shared Undo/Redo pill + History rows
 //              aligned on a CSS grid.
 // - v42 → v43: History panel mobile height + History row trailing-space trim.
+// - v43 → v44: History row text column max-content (flush closing quote).
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v43';
+const CACHE_NAME = 'todo-cache-v44';
 
 const ASSETS_TO_CACHE = [
   './',
