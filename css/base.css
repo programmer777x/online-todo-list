@@ -274,19 +274,37 @@ body {
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-/* Undo and Redo as pills — same border/background/padding as the
-   other header pills. Round 6 Item 4. */
+/* Undo/Redo pills — the pill look wins over .icon-button's
+   border:none / background:transparent by setting the border and
+   background explicitly on this more specific selector. Round 7
+   Item 3. */
 .icon-button.header-pill {
   width: auto;
   height: auto;
   min-width: 2.25rem;
   min-height: 2.25rem;
   font-size: 1rem;
+  border: 1px solid var(--input-border);
   border-radius: var(--radius-pill);
+  background: var(--input-bg);
+  color: var(--text-secondary);
   padding: var(--space-1) var(--space-2);
+  backdrop-filter: blur(var(--panel-blur));
+  -webkit-backdrop-filter: blur(var(--panel-blur));
 }
 
-/* Disabled state (nothing to undo / redo) still fades. */
+.icon-button.header-pill:hover:not(:disabled) {
+  background: var(--card-bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.icon-button.header-pill:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+  border-color: var(--accent);
+}
+
 .icon-button.header-pill:disabled {
   opacity: 0.35;
   cursor: not-allowed;
@@ -1383,9 +1401,8 @@ select option {
 /* ================================================================================================
    17. UNDO SNACKBAR
    ------------------------------------------------------------------------------------------------
-   Undo button first (left), summary head after it, trailing quote (when present) fixed at the end.
-   The head truncates with ellipsis; the tail never shrinks and never wraps. The snackbar's `[hidden]`
-   rules are load-bearing (author `display` overrides UA `[hidden]`).
+   Undo button first (left), summary head after it, trailing quote (when present) immediately after
+   the head. The head shrinks (never grows) so the tail sits directly after the visible text.
    ================================================================================================ */
 
 .undo-snackbar {
@@ -1423,8 +1440,10 @@ select option {
   }
 }
 
+/* Shrink-only (no grow) so the tail after it stays flush against the
+   visible text. Round 7 Item 1. */
 .undo-snackbar-text {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   font-size: 0.875rem;
   color: var(--text-primary);
@@ -1478,7 +1497,8 @@ select option {
      [Undo N button] [list-name label] [summary head] [trailing quote if present]
 
    Button / label / tail are flex: 0 0 auto (never shrink, never wrap).
-   The head truncates with ellipsis.
+   The head shrinks (never grows) so the tail sits directly after the
+   visible text — whether the text is truncated or short.
    ================================================================================================ */
 
 .fab-menu-button {
@@ -1624,9 +1644,12 @@ select option {
   box-shadow: var(--accent-glow);
 }
 
+/* Fixed-width label; margin-left: auto keeps it right-aligned before
+   the summary so the summary + tail cluster sits at the right. */
 .history-item-list {
   flex: 0 0 auto;
   max-width: 35%;
+  margin-left: auto;
   padding: 1px var(--space-2);
   font-size: 0.6875rem;
   font-weight: 700;
@@ -1640,8 +1663,10 @@ select option {
   white-space: nowrap;
 }
 
+/* Shrink-only (no grow). The tail after it sits flush against the
+   visible text. Round 7 Item 1. */
 .history-item-text {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
   font-size: 0.875rem;
   color: var(--text-primary);
