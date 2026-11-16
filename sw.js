@@ -44,6 +44,9 @@
 //        column changed to max-content so the closing quote sits flush
 //        against the text (css/base.css). CACHE_NAME goes from v43 to v44.
 //
+// 1.36 — Cache bump for double-tap zoom disable (js/ui.js).
+//        CACHE_NAME goes from v44 to v45.
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -102,10 +105,11 @@
 //              aligned on a CSS grid.
 // - v42 → v43: History panel mobile height + History row trailing-space trim.
 // - v43 → v44: History row text column max-content (flush closing quote).
+// - v44 → v45: disable double-tap zoom on mobile via touchend interception.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v44';
+const CACHE_NAME = 'todo-cache-v45';
 
 const ASSETS_TO_CACHE = [
   './',
