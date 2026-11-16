@@ -1373,14 +1373,6 @@ select option {
 
 /* ================================================================================================
    17. UNDO SNACKBAR
-   ------------------------------------------------------------------------------------------------
-   Undo button first (left), summary text after it. Text truncates with ellipsis; the button
-   never wraps to a second line no matter how long the summary is.
-
-   The `[hidden]` rules on both the snackbar and the button are load-bearing: without them,
-   the author `display: inline-flex` on each element would override the UA
-   `[hidden] { display: none }`, so `hidden = true` would set the attribute and change nothing
-   on screen. (Same root cause as the sync-status-bar `[hidden]` rule.)
    ================================================================================================ */
 
 .undo-snackbar {
@@ -1444,9 +1436,6 @@ select option {
   transition: background var(--transition-fast);
 }
 
-/* The button can be hidden by showSnackbar({ hideButton: true }) for non-undoable messages
-   (e.g. the 'history-undo-failed' notice). Without this rule the author `display: inline-flex`
-   above would override the UA `[hidden] { display: none }`, so the button would stay visible. */
 .undo-snackbar-button[hidden] {
   display: none;
 }
@@ -1462,6 +1451,17 @@ select option {
 
 /* ================================================================================================
    18. FAB MENU
+   ------------------------------------------------------------------------------------------------
+   History rows are single-line and never wrap:
+
+     [Undo N button] [list-name label] [summary text]
+
+   - Button and label are flex: 0 0 auto (never shrink, never wrap).
+   - The label has max-width: 35% and text-overflow: ellipsis, so a very
+     long list name truncates instead of pushing the summary off.
+   - The summary is flex: 1 1 auto; min-width: 0; text-overflow: ellipsis;
+     white-space: nowrap. It truncates to fill whatever space is left.
+   - Container is flex-wrap: nowrap so all three stay on the same line.
    ================================================================================================ */
 
 .fab-menu-button {
@@ -1564,11 +1564,13 @@ select option {
   gap: var(--space-1);
 }
 
+/* Single-line row: button / label / summary. Never wraps. */
 .history-item {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--space-2);
+  min-width: 0;
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
   border-radius: var(--radius-sm);
   background: transparent;
@@ -1579,28 +1581,7 @@ select option {
   background: var(--card-bg-hover);
 }
 
-.history-item-list {
-  flex: 0 0 auto;
-  padding: 1px var(--space-2);
-  font-size: 0.6875rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border-radius: var(--radius-pill);
-}
-
-.history-item-text {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 0.875rem;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
+/* Undo button — first, fixed width, never shrinks or wraps. */
 .history-item-undo {
   flex: 0 0 auto;
   padding: var(--space-1) var(--space-3);
@@ -1611,6 +1592,8 @@ select option {
   font-family: inherit;
   font-size: 0.75rem;
   font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
@@ -1624,6 +1607,34 @@ select option {
 .history-item-undo:focus-visible {
   outline: none;
   box-shadow: var(--accent-glow);
+}
+
+/* List-name label — fixed width, truncates with ellipsis when long. */
+.history-item-list {
+  flex: 0 0 auto;
+  max-width: 35%;
+  padding: 1px var(--space-2);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Summary text — takes the remaining space, truncates with ellipsis. */
+.history-item-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .history-empty {
