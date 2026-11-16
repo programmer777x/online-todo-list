@@ -19,15 +19,14 @@
 //
 // === REVISIONS ===
 //
-// 1.1 through 1.6 — prior rounds. History recording, list scoping,
-//       sequential unwind, redo stack.
-// 1.7 — Round 4: silent sequential-undo wipe fix.
+// 1.1 through 1.7 — prior rounds. History recording, list scoping,
+//       sequential unwind, silent-failure fix.
 // 1.8 — Round 7 Item 2: history survives window/app switches.
 //       hydrateFromRemote() no longer clears history unconditionally;
-//       it compares the incoming list-ID set and task counts to the
-//       current local state and only clears when they differ. This
+//       it compares the incoming data set to the current local state
+//       via datasetsEqual() and only clears when they differ. This
 //       stops the focus-driven TOKEN_REFRESHED → syncNow() →
-//       fetchRemoteState() → hydrateFromRemote() chain from wiping
+//       fetchRemoteState() → hydrateFromRemote chain from wiping
 //       history on every window switch.
 //
 // ================================================================================================
@@ -36,7 +35,7 @@
 //
 // - Initial creation. Extracted state and data-layer logic from app.js.
 // - All prior additions carried forward unchanged.
-// - datasetsEqual(localLists, remoteLists, remoteTasks) helper used by
+// - datasetsEqual(remoteLists, remoteTasks) helper used by
 //   hydrateFromRemote() to decide whether the incoming data set is
 //   actually different. See v1.8.
 //
@@ -823,18 +822,7 @@ function reparentTask(taskId, newParentId, newSection) {
 /**
  * Compare the incoming remote data set to the current local state.
  * Returns true if they look equivalent at the coarse level used to
- * decide whether the history should be cleared:
- *   - The set of list IDs is equal.
- *   - Per list, the task count is equal.
- *
- * This is deliberately not a field-level diff. The failure mode we're
- * guarding against is a focus-driven TOKEN_REFRESHED that refetches
- * the same data — that should NOT clear history. A genuine sign-in
- * swap changes the list ID set (different user / fresh migration) or
- * the task counts, and clearHistory() fires. A user editing a task
- * text locally while another tab edits the same task remotely is rare
- * and clearing history on that path would be a worse outcome than
- * leaving the history visible, so we tolerate the coarse check.
+ * decide whether the history should be cleared.
  */
 function datasetsEqual(remoteLists, remoteTasks) {
   if (!Array.isArray(remoteLists) || !Array.isArray(remoteTasks)) return false;
@@ -849,7 +837,6 @@ function datasetsEqual(remoteLists, remoteTasks) {
     if (!localSet.has(id)) return false;
   }
 
-  // Task counts per list.
   const remoteTaskCounts = {};
   for (const t of remoteTasks) {
     if (!t || !t.list_id) continue;
@@ -870,10 +857,6 @@ function hydrateFromRemote(remoteLists, remoteTasks) {
     return;
   }
 
-  // Round 7 Item 2: clear history only when the data set actually changed.
-  // A focus-driven TOKEN_REFRESHED runs fetchRemoteState() → this function
-  // with the same data, and used to wipe history as a side effect. If the
-  // incoming set matches the local one, keep the history.
   const sameSet = datasetsEqual(remoteLists, remoteTasks);
 
   const newLists = {};
