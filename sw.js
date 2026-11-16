@@ -19,21 +19,15 @@
 //
 // === REVISIONS ===
 //
-// 1.1 through 1.28 — prior rounds. See 1.29 for the current bump.
+// 1.1 through 1.29 — prior rounds. See 1.30 for the current bump.
 //
-// 1.29 — Cache bump for the round-4 fixes: silent sequential-undo
-//        failure, snackbar Undo button at the front, Sync before Theme.
-//        CACHE_NAME goes from todo-cache-v38 to todo-cache-v39 so
-//        returning clients fetch the updated js/store.js (applyUndoAction
-//        gains a listId fallback for pre-round-2 entries;
-//        undoHistoryEntry returns { ok, undone, failed, dropped } and
-//        preserves failing entries instead of silently dropping them;
-//        dispatches 'history-undo-failed' when any entry could not be
-//        applied), js/ui.js (snackbar Undo button is now the first child
-//        of the snackbar; listens for 'history-undo-failed' and shows a
-//        non-undoable message so the failure is visible), and index.html
-//        (Sync pill sits before Theme in the wide header to match the
-//        round-3 spec).
+// 1.30 — Cache bump for the round-5 fix: History row Undo buttons to
+//        the front. CACHE_NAME goes from todo-cache-v39 to
+//        todo-cache-v40 so returning clients fetch the updated
+//        js/ui.js whose renderHistoryList() now renders each row as
+//        [Undo N button] [summary text] [list-name label] instead of
+//        putting the button at the end. The snackbar is unchanged —
+//        its Undo button stays first as built in round 4.
 //
 // ================================================================================================
 //
@@ -85,10 +79,11 @@
 // - v37 → v38: sequential undo + header row fixes.
 // - v38 → v39: silent sequential-undo failure fix + snackbar Undo first +
 //              Sync before Theme.
+// - v39 → v40: History row Undo buttons to the front.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v39';
+const CACHE_NAME = 'todo-cache-v40';
 
 const ASSETS_TO_CACHE = [
   './',
