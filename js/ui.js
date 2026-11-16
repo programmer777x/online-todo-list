@@ -38,10 +38,13 @@
 // 1.24 — Undo N on history rows and header group flip in compact (round 3).
 // 1.25 — Snackbar Undo to the front, surface undo failures (round 4).
 // 1.26 — History row Undo buttons to the front (round 5). Each row now
-//        renders [Undo N button] [summary text] [list-name label]
+//        renders [Undo N button] [list-name label] [summary text]
 //        instead of [list-name label] [summary text] [Undo N button].
-//        The label text and click behavior are unchanged. The snackbar
-//        is untouched — its Undo button stays first as built in 1.25.
+//        Only the button moved — the label and summary keep their
+//        relative positions. The row is now one line always; the
+//        accompanying CSS (section 18 of css/base.css) changes
+//        .history-item to flex-wrap: nowrap and adds ellipsis on the
+//        label. The snackbar is untouched.
 //
 // ================================================================================================
 //
@@ -57,9 +60,9 @@
 // - Prior rounds' fixes carried forward unchanged.
 // - History row layout: the Undo button used to sit at the end of the
 //   row with the list-name label first and the summary in the middle.
-//   The button is now first, then the summary, then the list-name label.
-//   A long summary still truncates via .history-item-text; the button
-//   and the label never wrap or shrink. See 1.26.
+//   The button is now first, then the list-name label, then the
+//   summary. Only the button's position moved; the label and summary
+//   keep their relative order. See 1.26.
 //
 // ================================================================================================
 
@@ -637,9 +640,10 @@ function wireUndo() {
 /* ================================================================================================
    FAB MENU
    ------------------------------------------------------------------------------------------------
-   Each History row renders [Undo N button] [summary text] [list-name label]. The button is
-   first so it never gets pushed right by a long summary; the summary truncates with ellipsis
-   (see .history-item-text in css/base.css); the list-name label sits at the end.
+   Each History row renders [Undo N button] [list-name label] [summary text]. Only the
+   button moved from its old end-of-row position — the label and summary keep their
+   relative order. The row is one line always: `.history-item` uses flex-wrap: nowrap
+   (section 18 of css/base.css); the summary truncates with ellipsis.
    ================================================================================================ */
 
 function renderHistoryList() {
@@ -683,23 +687,23 @@ function renderHistoryList() {
       }
     });
 
-    // 2. Summary text SECOND.
+    // 2. List-name label SECOND (only when present).
+    const listId = entry.listId || (entry.undoAction && entry.undoAction.listId);
+    const listName = listId && state.lists[listId] ? state.lists[listId].name : null;
+
+    // 3. Summary text LAST.
     const textEl = document.createElement('span');
     textEl.className = 'history-item-text';
     textEl.textContent = entry.summary || entry.kind || 'Change';
 
-    // 3. List-name label LAST.
-    const listId = entry.listId || (entry.undoAction && entry.undoAction.listId);
-    const listName = listId && state.lists[listId] ? state.lists[listId].name : null;
-
     li.appendChild(btn);
-    li.appendChild(textEl);
     if (listName) {
       const labelEl = document.createElement('span');
       labelEl.className = 'history-item-list';
       labelEl.textContent = listName;
       li.appendChild(labelEl);
     }
+    li.appendChild(textEl);
 
     listEl.appendChild(li);
   }
