@@ -21,6 +21,10 @@
 //        space before the closing quote. head.trimEnd() at the call site
 //        in renderHistoryList(); splitTrailingQuote() and the snackbar
 //        path are untouched.
+// 1.31 — disableDoubleTapZoom(): a touchend listener that prevents
+//        default on taps within 300 ms of the previous one, blocking
+//        iOS Safari's double-tap zoom that user-scalable=no no longer
+//        reliably suppresses. Called from init().
 //
 // ================================================================================================
 //
@@ -29,6 +33,7 @@
 // - Initial creation. Extracted event handling and initialization from app.js.
 // - All prior additions carried forward unchanged.
 // - Empty-cell rendering for the History grid (Item 4). See 1.29.
+// - disableDoubleTapZoom() touch interception. See 1.31.
 //
 // ================================================================================================
 //
@@ -43,6 +48,11 @@
 //   recorded summary had a trailing space in its text. renderHistoryList()
 //   now trims the head at the call site only, leaving the snackbar and
 //   the grid layout unchanged. See 1.30.
+// - Double-tapping the task complete button on mobile triggered iOS
+//   Safari's page zoom. init() now installs a touchend interceptor
+//   that prevents default on taps within 300 ms of the previous one,
+//   stopping the zoom without affecting single taps or pinch/pan.
+//   See 1.31.
 //
 // ================================================================================================
 
@@ -56,6 +66,35 @@ function splitTrailingQuote(text) {
     return { head: s.slice(0, -1), tail: '"' };
   }
   return { head: s, tail: '' };
+}
+
+
+/* ================================================================================================
+   MOBILE GESTURE SUPPRESSION
+   ================================================================================================ */
+
+/**
+ * Block the browser's double-tap-to-zoom behavior on mobile.
+ *
+ * iOS Safari no longer reliably respects `user-scalable=no` in the viewport
+ * meta tag, so a JS fallback is required. Any touchend landing within 300 ms
+ * of the previous touchend is treated as the second tap of a double-tap and
+ * has its default prevented.
+ *
+ * Single taps, panning, and pinch-zoom are untouched — only the rapid-second-
+ * tap path is suppressed.
+ *
+ * @returns {void}
+ */
+function disableDoubleTapZoom() {
+  let lastTouchEnd = 0;
+  document.addEventListener('touchend', function (event) {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) {
+      event.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, { passive: false });
 }
 
 
@@ -1103,6 +1142,7 @@ function init() {
   wireHeaderCompact();
   wireUndo();
   wireFabMenu();
+  disableDoubleTapZoom();
   render();
 
   initSortable();
