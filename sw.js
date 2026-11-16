@@ -19,18 +19,23 @@
 //
 // === REVISIONS ===
 //
-// 1.1 through 1.30 — prior rounds. See 1.31 for the current bump.
+// 1.1 through 1.31 — prior rounds. See 1.32 for the current bump.
 //
-// 1.31 — Cache bump for the round-5 fix: History row Undo buttons to
-//        the front + rows never wrap. CACHE_NAME goes from
-//        todo-cache-v39 to todo-cache-v40 so returning clients fetch
-//        the updated js/ui.js whose renderHistoryList() renders each
-//        row as [Undo N button] [list-name label] [summary text], and
-//        the updated css/base.css whose .history-item is flex-wrap:
-//        nowrap with a fixed-width button, a 35%-max label that
-//        truncates with ellipsis, and a summary that fills the
-//        remaining space and truncates with ellipsis. The snackbar
-//        is unchanged from round 4.
+// 1.32 — Cache bump for the round-6 fixes: single sync arrow, Enter
+//        submits sign-in, closing quote preserved on truncation, and
+//        the per-mode header order with Undo/Redo as pills.
+//        CACHE_NAME goes from todo-cache-v40 to todo-cache-v41 so
+//        returning clients fetch the updated js/ui.js (short idle and
+//        no-sync labels drop the leading arrow; Enter on the sign-in
+//        email and password inputs submits the current step; history
+//        rows and the snackbar split the trailing quote into a fixed
+//        span; wireHeaderCompact() moves only Theme between groups so
+//        the new wide DOM order survives load), index.html (new
+//        header group order List/Theme/Login + Sync/Undo/Redo, the
+//        snackbar tail span, sync pill text starts as "—"), and
+//        css/base.css (.undo-snackbar-tail and .history-item-tail
+//        fixed spans, Undo/Redo pill sizing, compact sync pill no
+//        longer stretches).
 //
 // ================================================================================================
 //
@@ -83,10 +88,12 @@
 // - v38 → v39: silent sequential-undo failure fix + snackbar Undo first +
 //              Sync before Theme.
 // - v39 → v40: History row Undo buttons to the front + rows never wrap.
+// - v40 → v41: sync single arrow + Enter submits sign-in + closing quote
+//              preserved + per-mode header order with Undo/Redo pills.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v40';
+const CACHE_NAME = 'todo-cache-v41';
 
 const ASSETS_TO_CACHE = [
   './',
