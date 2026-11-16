@@ -37,12 +37,11 @@
 //        compact sync label (round 2).
 // 1.24 — Undo N on history rows and header group flip in compact (round 3).
 // 1.25 — Snackbar Undo to the front, surface undo failures (round 4).
-//        The snackbar now lays out the Undo button first and the
-//        summary text after it (the text truncates with ellipsis so it
-//        cannot push the button to a second line). The new
-//        'history-undo-failed' event from js/store.js is caught here and
-//        shown as a transient message so a failed sequential undo is
-//        visible instead of silently rendering an emptied history.
+// 1.26 — History row Undo buttons to the front (round 5). Each row now
+//        renders [Undo N button] [summary text] [list-name label]
+//        instead of [list-name label] [summary text] [Undo N button].
+//        The label text and click behavior are unchanged. The snackbar
+//        is untouched — its Undo button stays first as built in 1.25.
 //
 // ================================================================================================
 //
@@ -50,26 +49,17 @@
 //
 // - Initial creation. Extracted event handling and initialization from app.js.
 // - All prior additions carried forward unchanged.
-// - 'history-undo-failed' listener in wireUndo(): on failure, replaces
-//   the current snackbar text with "Couldn't undo N change(s)" and keeps
-//   the snackbar visible for the standard 5s. The failed entries stay in
-//   the history list (store.js preserves them), so the user can retry or
-//   inspect them. See 1.25.
 //
 // ================================================================================================
 //
 // === FIXES ===
 //
-// - The snackbar Undo button used to sit at the end of the snackbar, so
-//   a long summary pushed it onto a second line, which made it hard to
-//   hit on mobile. The button is now the leftmost element and the text
-//   truncates to fill the remaining space. See 1.25.
-// - A failed sequential undo used to be silent in the UI: store.js's
-//   v1.6 could return truthy even when every entry was dropped as dead,
-//   and the UI re-rendered an empty history as if the undo had worked.
-//   Store v1.7 now preserves failing entries and dispatches
-//   'history-undo-failed'; ui.js catches that event and shows a
-//   message. See 1.25.
+// - Prior rounds' fixes carried forward unchanged.
+// - History row layout: the Undo button used to sit at the end of the
+//   row with the list-name label first and the summary in the middle.
+//   The button is now first, then the summary, then the list-name label.
+//   A long summary still truncates via .history-item-text; the button
+//   and the label never wrap or shrink. See 1.26.
 //
 // ================================================================================================
 
@@ -562,7 +552,6 @@ function wireUndo() {
   function showSnackbar(text, { hideButton = false } = {}) {
     snackbarText.textContent = text || 'Action applied';
     snackbar.hidden = false;
-    // The button is hidden for non-undoable messages (e.g. the failure notice).
     snackbarBtn.hidden = Boolean(hideButton);
     if (snackbarTimer) clearTimeout(snackbarTimer);
     snackbarTimer = setTimeout(() => {
@@ -599,9 +588,6 @@ function wireUndo() {
     showSnackbar(detail.summary || 'Action applied');
   });
 
-  // Round 4 Item 1 (UI): surface a failed sequential undo. The store keeps
-  // the failing entries in the history and dispatches this event so the user
-  // knows the undo did not fully happen.
   window.addEventListener('history-undo-failed', (e) => {
     const detail = e && e.detail ? e.detail : {};
     const failed = Number(detail.failedCount || 0);
@@ -650,6 +636,10 @@ function wireUndo() {
 
 /* ================================================================================================
    FAB MENU
+   ------------------------------------------------------------------------------------------------
+   Each History row renders [Undo N button] [summary text] [list-name label]. The button is
+   first so it never gets pushed right by a long summary; the summary truncates with ellipsis
+   (see .history-item-text in css/base.css); the list-name label sits at the end.
    ================================================================================================ */
 
 function renderHistoryList() {
@@ -676,19 +666,7 @@ function renderHistoryList() {
     const li = document.createElement('li');
     li.className = 'history-item';
 
-    const listId = entry.listId || (entry.undoAction && entry.undoAction.listId);
-    const listName = listId && state.lists[listId] ? state.lists[listId].name : null;
-    if (listName) {
-      const labelEl = document.createElement('span');
-      labelEl.className = 'history-item-list';
-      labelEl.textContent = listName;
-      li.appendChild(labelEl);
-    }
-
-    const textEl = document.createElement('span');
-    textEl.className = 'history-item-text';
-    textEl.textContent = entry.summary || entry.kind || 'Change';
-
+    // 1. Undo button FIRST.
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'history-item-undo';
@@ -705,8 +683,23 @@ function renderHistoryList() {
       }
     });
 
-    li.appendChild(textEl);
+    // 2. Summary text SECOND.
+    const textEl = document.createElement('span');
+    textEl.className = 'history-item-text';
+    textEl.textContent = entry.summary || entry.kind || 'Change';
+
+    // 3. List-name label LAST.
+    const listId = entry.listId || (entry.undoAction && entry.undoAction.listId);
+    const listName = listId && state.lists[listId] ? state.lists[listId].name : null;
+
     li.appendChild(btn);
+    li.appendChild(textEl);
+    if (listName) {
+      const labelEl = document.createElement('span');
+      labelEl.className = 'history-item-list';
+      labelEl.textContent = listName;
+      li.appendChild(labelEl);
+    }
 
     listEl.appendChild(li);
   }
