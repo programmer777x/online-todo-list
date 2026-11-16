@@ -19,76 +19,40 @@
 //
 // === REVISIONS ===
 //
-// 1.1 — hydrateFromRemote() for js/sync.js.
-// 1.2 — saveState() broadcast to sync.js (later narrowed in 1.3).
-// 1.3 — Precise mutation broadcast from each mutation function.
-// 1.4 — Two-layer undo history: HISTORY_KEY / HISTORY_MAX, recordHistory,
-//       undoLast, undoHistoryEntry (per-entry model).
-// 1.5 — History dispatch + list scoping + dead-entry pruning + redo.
-//       recordHistory dispatches 'history-recorded'; every undoAction
-//       carries a listId; dead entries are dropped; hydrateFromRemote
-//       clears history; every entry carries a redoAction; redo stack
-//       + redoLast / clearRedo.
-// 1.6 — Sequential undo. undoHistoryEntry(id) unwinds from the newest
-//       entry down to and including the target, newest-first, one at a
-//       time. Dead entries are skipped (removed) and the unwind
-//       continues. Undone entries are pushed onto the redo stack in
-//       unwind order. Round-2 same-task prune rule removed.
-// 1.7 — Silent dead-wipe fix. The 1.6 unwind returns true even when
-//       every entry was dropped as dead, so a chain of failures wiped
-//       the history and re-rendered as if the undo had worked. Three
-//       changes: (a) applyUndoAction() falls back to the entry's own
-//       listId (then the active list) when the action's undo payload
-//       has no listId, so pre-round-2 entries can still be undone;
-//       (b) failing entries stay in the history and are surfaced, only
-//       genuinely-missing targets are dropped; (c) undoHistoryEntry
-//       returns { ok, undone, failed, dropped } and dispatches
-//       'history-undo-failed' when any entry could not be applied.
+// 1.1 through 1.6 — prior rounds. History recording, list scoping,
+//       sequential unwind, redo stack.
+// 1.7 — Round 4: silent sequential-undo wipe fix.
+// 1.8 — Round 7 Item 2: history survives window/app switches.
+//       hydrateFromRemote() no longer clears history unconditionally;
+//       it compares the incoming list-ID set and task counts to the
+//       current local state and only clears when they differ. This
+//       stops the focus-driven TOKEN_REFRESHED → syncNow() →
+//       fetchRemoteState() → hydrateFromRemote() chain from wiping
+//       history on every window switch.
 //
 // ================================================================================================
 //
 // === ADDED ===
 //
-// - Initial creation. Extracted the state and data-layer logic from the original app.js.
-// - `reorderTask()` — data-layer half of drag-to-reorder.
-// - `reparentTask()` — data-layer half of cross-list drag.
-// - `hydrateFromRemote(remoteLists, remoteTasks)` — load-time hydration path
-//   for signed-in users. Clears history and redo on successful replace.
-// - HISTORY_KEY constant, HISTORY_MAX cap, lazily-loaded history array,
-//   loadHistory() / saveHistory() / recordHistory(), undoLast(),
-//   undoHistoryEntry(id), and the redo stack + redoLast() / clearRedo().
-// - recordHistory() dispatches 'history-recorded' after save. See v1.5.
-// - Sequential unwind in undoHistoryEntry(id). See v1.6.
-// - applyUndoAction's listId fallback (action.listId → entry.listId →
-//   activeListId). See v1.7.
-// - Structured return shape from undoHistoryEntry() ({ ok, undone,
-//   failed, dropped }). See v1.7.
-// - 'history-undo-failed' event dispatched when any entry in the chain
-//   could not be applied, with { failedCount, undoneCount }. See v1.7.
+// - Initial creation. Extracted state and data-layer logic from app.js.
+// - All prior additions carried forward unchanged.
+// - datasetsEqual(localLists, remoteLists, remoteTasks) helper used by
+//   hydrateFromRemote() to decide whether the incoming data set is
+//   actually different. See v1.8.
 //
 // ================================================================================================
 //
 // === FIXES ===
 //
-// - `bootstrapFreshState()` seeds the onboarding demo list.
-// - Local mutations now fan out through saveState()'s broadcast (narrowed
-//   in 1.3 to per-mutation events).
-// - The 1.2 broadcast spammed Supabase. Fixed in 1.3.
-// - The undo snackbar never appeared (recordHistory did not dispatch
-//   'history-recorded'). Fixed in 1.5.
-// - History entries were not scoped to a list. Fixed in 1.5.
-// - Dead entries never went away. Fixed in 1.5.
-// - History carried stale entries across a data replacement. Fixed in 1.5.
-// - The round-2 same-task prune rule dropped entries in confusing ways.
-//   Replaced by sequential unwind in 1.6.
-// - Sequential undo could silently wipe history without undoing tasks.
-//   When every applyUndoAction in the chain returned false, every entry
-//   was treated as dead, the history was rewritten to only the older
-//   entries, and undoHistoryEntry still returned true. The UI re-rendered
-//   as if the undo worked. Fixed in 1.7 with three changes: listId
-//   fallback for pre-round-2 entries, failing entries preserved and
-//   surfaced instead of dropped, and a structured return shape plus a
-//   'history-undo-failed' event for the UI to react to.
+// - Prior rounds' fixes carried forward unchanged.
+// - Switching to another window or app and back wiped the undo history
+//   because hydrateFromRemote() unconditionally cleared it. That path
+//   is reached on every focus-driven TOKEN_REFRESHED event via
+//   sync.js → syncNow() → fetchRemoteState(). hydrateFromRemote()
+//   now compares the incoming set (list IDs + task counts) to the
+//   current local state and only clears when they differ. Sign-in and
+//   sign-out still clear (data sets differ); a plain focus refresh
+//   does not. See v1.8.
 //
 // ================================================================================================
 
@@ -325,22 +289,6 @@ function saveState() {
 
 /* ================================================================================================
    UNDO / REDO HISTORY
-   ------------------------------------------------------------------------------------------------
-   A capped list of the last HISTORY_MAX undoable actions, persisted in localStorage.
-   Each entry is { id, kind, summary, listId, taskId, undoAction, redoAction }.
-
-   Sequential undo (LIFO): undoHistoryEntry(id) finds the target and unwinds from
-   the newest entry down to and including the target, newest-first. Successfully
-   undone entries are pushed onto the redo stack so a subsequent Redo re-applies
-   them oldest-first, one per tap.
-
-   Failure handling (v1.7): an entry whose target is genuinely missing (task or
-   list gone) is dropped; any other failure preserves the entry and surfaces a
-   'history-undo-failed' event. The return shape is
-   { ok, undone, failed, dropped } so callers can react to partial success.
-
-   Redo stack: separate in-memory stack (not persisted). Cleared on any new
-   recorded action, on hydrateFromRemote(), and on clearHistory().
    ================================================================================================ */
 
 const HISTORY_KEY = 'todolist.v1.history';
@@ -406,18 +354,6 @@ function recordHistory(entry) {
   return item;
 }
 
-/**
- * Apply an undo (or redo) action.
- *
- * @param {object} action - The stored undoAction / redoAction.
- * @param {string} [fallbackListId] - If the action itself carries no listId
- *   (pre-round-2 entries), fall back to the entry's own listId.
- * @returns {{ applied: boolean, reason: 'ok' | 'no-list' | 'no-target' | 'no-op' }}
- *   'no-list' / 'no-target' are genuine "dead entry" reasons — the target is
- *   missing. 'no-op' means the action was well-formed but the state already
- *   matched it (e.g. toggling to the same done value); that is not a dead
- *   entry, and callers should preserve it.
- */
 function applyUndoActionDetailed(action, fallbackListId) {
   if (!action || typeof action !== 'object') {
     return { applied: false, reason: 'no-target' };
@@ -519,23 +455,6 @@ function applyRedoAction(action, fallbackListId) {
   return applyUndoActionDetailed(action, fallbackListId).applied;
 }
 
-/**
- * Sequential unwind: undo the target entry AND every entry newer than it,
- * newest-first.
- *
- * Returns an object { ok, undone, failed, dropped }:
- *   - ok: true if at least one entry was undone.
- *   - undone: entries successfully undone (also pushed onto the redo stack).
- *   - failed: entries that could not be applied for a non-dead reason
- *             (state already matched, unknown op). These STAY in the
- *             history and are surfaced via 'history-undo-failed'.
- *   - dropped: entries whose target was genuinely missing (task / list
- *              gone). These are removed from the history.
- *
- * The return value is truthy overall (it is an object), so existing callers
- * that check `if (result)` keep their "did something happen" behavior; UI
- * code that needs the breakdown reads the fields.
- */
 function undoHistoryEntry(id) {
   const list = loadHistory();
   const targetIdx = list.findIndex((e) => e.id === id);
@@ -555,21 +474,15 @@ function undoHistoryEntry(id) {
     if (result.applied) {
       undoneEntries.push(entry);
     } else if (result.reason === 'no-target' || result.reason === 'no-list') {
-      // Genuinely missing target — the entry cannot be applied ever again.
       deadIds.add(entry.id);
       droppedEntries.push(entry);
     } else {
-      // 'no-op' or unknown — the entry is well-formed but the state
-      // matched already; keep it visible so the user knows what happened.
       failedEntries.push(entry);
     }
   }
 
-  // Preserve entries older than the target; drop only the dead ones in the chain.
   const remaining = list.slice(0, targetIdx).filter((e) => !deadIds.has(e.id));
 
-  // Push undone entries onto the redo stack in unwind order (newest-first).
-  // redoLast() pops from the end, so the oldest undone entry pops first.
   for (const e of undoneEntries) {
     _redoStack.push(e);
   }
@@ -907,10 +820,61 @@ function reparentTask(taskId, newParentId, newSection) {
    SUPABASE SYNC BRIDGE
    ================================================================================================ */
 
+/**
+ * Compare the incoming remote data set to the current local state.
+ * Returns true if they look equivalent at the coarse level used to
+ * decide whether the history should be cleared:
+ *   - The set of list IDs is equal.
+ *   - Per list, the task count is equal.
+ *
+ * This is deliberately not a field-level diff. The failure mode we're
+ * guarding against is a focus-driven TOKEN_REFRESHED that refetches
+ * the same data — that should NOT clear history. A genuine sign-in
+ * swap changes the list ID set (different user / fresh migration) or
+ * the task counts, and clearHistory() fires. A user editing a task
+ * text locally while another tab edits the same task remotely is rare
+ * and clearing history on that path would be a worse outcome than
+ * leaving the history visible, so we tolerate the coarse check.
+ */
+function datasetsEqual(remoteLists, remoteTasks) {
+  if (!Array.isArray(remoteLists) || !Array.isArray(remoteTasks)) return false;
+
+  const localListIds = Object.keys(state.lists);
+  const remoteListIds = remoteLists.map((l) => l && l.id).filter(Boolean);
+
+  if (localListIds.length !== remoteListIds.length) return false;
+
+  const localSet = new Set(localListIds);
+  for (const id of remoteListIds) {
+    if (!localSet.has(id)) return false;
+  }
+
+  // Task counts per list.
+  const remoteTaskCounts = {};
+  for (const t of remoteTasks) {
+    if (!t || !t.list_id) continue;
+    remoteTaskCounts[t.list_id] = (remoteTaskCounts[t.list_id] || 0) + 1;
+  }
+
+  for (const listId of remoteListIds) {
+    const localTasks = state.lists[listId] ? state.lists[listId].tasks : null;
+    if (!localTasks) return false;
+    if (localTasks.length !== (remoteTaskCounts[listId] || 0)) return false;
+  }
+
+  return true;
+}
+
 function hydrateFromRemote(remoteLists, remoteTasks) {
   if (!remoteLists || remoteLists.length === 0) {
     return;
   }
+
+  // Round 7 Item 2: clear history only when the data set actually changed.
+  // A focus-driven TOKEN_REFRESHED runs fetchRemoteState() → this function
+  // with the same data, and used to wipe history as a side effect. If the
+  // incoming set matches the local one, keep the history.
+  const sameSet = datasetsEqual(remoteLists, remoteTasks);
 
   const newLists = {};
 
@@ -946,7 +910,9 @@ function hydrateFromRemote(remoteLists, remoteTasks) {
 
   saveState();
 
-  clearHistory();
+  if (!sameSet) {
+    clearHistory();
+  }
 
   if (typeof render === 'function') {
     render();
