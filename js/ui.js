@@ -12,8 +12,8 @@
 // === REVISIONS ===
 //
 // 1.1 — Supabase Stage 3 auth modal wiring.
-// 1.2 — Auth client fix (window.sync.getSession() + local createClient).
-// 1.3 — Auth refactor (link + password). Single shared client.
+// 1.2 — Auth client fix.
+// 1.3 — Auth refactor (link + password).
 // 1.4 — Header update race fix.
 // 1.5 — Password input guard.
 // 1.6 — Self-contained auth DOM cache.
@@ -35,47 +35,41 @@
 // 1.22 — Two-layer undo + expandable menu + editable password-step email.
 // 1.23 — Redo button, history list labels, sync tap rebuilds picker,
 //        compact sync label (round 2).
-// 1.24 — Undo N on history rows and header group flip in compact. The
-//        per-row History Undo button now shows "Undo N" where N is the
-//        number of entries a sequential unwind would actually undo
-//        (matching store.js v1.6). The header layout moves undo and redo
-//        between .header-primary and .header-secondary when the compact
-//        breakpoint crosses, so compact mode gives row 1: List + Login,
-//        row 2: Theme + Sync + Undo + Redo, and wide mode keeps the
-//        List / Undo / Redo / Login + Theme / Sync split (round 3
-//        item 1 and item 2).
+// 1.24 — Undo N on history rows and header group flip in compact (round 3).
+// 1.25 — Snackbar Undo to the front, surface undo failures (round 4).
+//        The snackbar now lays out the Undo button first and the
+//        summary text after it (the text truncates with ellipsis so it
+//        cannot push the button to a second line). The new
+//        'history-undo-failed' event from js/store.js is caught here and
+//        shown as a transient message so a failed sequential undo is
+//        visible instead of silently rendering an emptied history.
 //
 // ================================================================================================
 //
 // === ADDED ===
 //
 // - Initial creation. Extracted event handling and initialization from app.js.
-// - Auth wiring, sync bar, header helpers, undo, FAB menu, and all the
-//   revisions above are carried forward unchanged except where noted in
-//   the revision list.
-// - History row undo count: renderHistoryList() now computes each row's
-//   unwind count from its position in the newest-first array and writes
-//   it into the row's Undo button label ("Undo N" for N > 1, "Undo" for
-//   N === 1). See 1.24.
-// - wireHeaderCompact() now physically moves #undo-button and
-//   #redo-button between .header-primary and .header-secondary based on
-//   the compact breakpoint, so compact mode gets the required row split
-//   without any CSS order hacks. Event bindings survive the move because
-//   the buttons keep their ids and listener registrations. See 1.24.
+// - All prior additions carried forward unchanged.
+// - 'history-undo-failed' listener in wireUndo(): on failure, replaces
+//   the current snackbar text with "Couldn't undo N change(s)" and keeps
+//   the snackbar visible for the standard 5s. The failed entries stay in
+//   the history list (store.js preserves them), so the user can retry or
+//   inspect them. See 1.25.
 //
 // ================================================================================================
 //
 // === FIXES ===
 //
-// - The History row Undo button used to just say "Undo", so the user had
-//   no way to know that tapping an older row would unwind every entry
-//   newer than it as well. The button now reads "Undo N", where N is the
-//   number of entries the sequential unwind will actually undo. See 1.24.
-// - The compact header layout put Undo and Redo on row 1 with the list
-//   and login, which left no room for Login on a narrow screen. The
-//   group flip moves Undo and Redo onto row 2 in compact mode, so row 1
-//   is List + Login and row 2 is Theme + Sync + Undo + Redo, matching
-//   the requested layout. See 1.24.
+// - The snackbar Undo button used to sit at the end of the snackbar, so
+//   a long summary pushed it onto a second line, which made it hard to
+//   hit on mobile. The button is now the leftmost element and the text
+//   truncates to fill the remaining space. See 1.25.
+// - A failed sequential undo used to be silent in the UI: store.js's
+//   v1.6 could return truthy even when every entry was dropped as dead,
+//   and the UI re-rendered an empty history as if the undo had worked.
+//   Store v1.7 now preserves failing entries and dispatches
+//   'history-undo-failed'; ui.js catches that event and shows a
+//   message. See 1.25.
 //
 // ================================================================================================
 
@@ -489,24 +483,7 @@ function wireEvents() {
 
 
 /* ================================================================================================
-   HEADER COMPACT (Item 4 / round 3 Item 2)
-   ------------------------------------------------------------------------------------------------
-   Toggles .header-compact on .app-header at the compact breakpoint AND physically moves
-   #undo-button and #redo-button between .header-primary and .header-secondary so the two
-   header rows carry the right controls:
-
-     Wide (default):               Compact (portrait, narrow):
-       .header-primary:              .header-primary:
-         list switcher                 list switcher
-         undo                          auth (Login)
-         redo
-         auth (Login)                .header-secondary:
-                                     theme
-       .header-secondary:            sync
-         theme                       undo
-         sync                        redo
-
-   The buttons keep their ids and listeners through the move. Only parentNode changes.
+   HEADER COMPACT (round 3 Item 2)
    ================================================================================================ */
 
 const HEADER_COMPACT_QUERY = '(max-width: 639.98px) and (orientation: portrait)';
@@ -526,11 +503,9 @@ function wireHeaderCompact() {
     if (!undoBtn || !redoBtn) return;
 
     if (mql.matches) {
-      // Compact: undo + redo move to secondary (after sync, which is last).
       if (undoBtn.parentNode !== secondary) secondary.appendChild(undoBtn);
       if (redoBtn.parentNode !== secondary) secondary.appendChild(redoBtn);
     } else {
-      // Wide: undo + redo back to primary, after the list switcher and before auth.
       const auth = document.getElementById('auth-button');
       if (undoBtn.parentNode !== primary) {
         if (auth && auth.parentNode === primary) primary.insertBefore(undoBtn, auth);
@@ -555,11 +530,13 @@ function wireHeaderCompact() {
 
 
 /* ================================================================================================
-   UNDO / REDO (Items 1, 5)
+   UNDO / REDO
    ------------------------------------------------------------------------------------------------
-   Snackbar after each history-recorded action with an Undo button (5s auto-dismiss).
-   Header #undo-button and #redo-button plus Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y for desktop.
-   All paths call window.store.* and then re-render.
+   Snackbar after each history-recorded action with the Undo button FIRST (left) and the
+   summary text after it. The text truncates with ellipsis; the button never wraps to a
+   second line. Header #undo-button and #redo-button plus Ctrl+Z / Ctrl+Shift+Z / Ctrl+Y
+   for desktop. The 'history-undo-failed' event from store.js is surfaced here so a
+   failed sequential undo is visible instead of silent.
    ================================================================================================ */
 
 const SNACKBAR_DURATION_MS = 5000;
@@ -582,13 +559,16 @@ function wireUndo() {
     snackbar.hidden = true;
   }
 
-  function showSnackbar(text) {
+  function showSnackbar(text, { hideButton = false } = {}) {
     snackbarText.textContent = text || 'Action applied';
     snackbar.hidden = false;
+    // The button is hidden for non-undoable messages (e.g. the failure notice).
+    snackbarBtn.hidden = Boolean(hideButton);
     if (snackbarTimer) clearTimeout(snackbarTimer);
     snackbarTimer = setTimeout(() => {
       snackbarTimer = 0;
       snackbar.hidden = true;
+      snackbarBtn.hidden = false;
     }, SNACKBAR_DURATION_MS);
   }
 
@@ -617,6 +597,19 @@ function wireUndo() {
     const detail = e && e.detail ? e.detail : null;
     if (!detail) return;
     showSnackbar(detail.summary || 'Action applied');
+  });
+
+  // Round 4 Item 1 (UI): surface a failed sequential undo. The store keeps
+  // the failing entries in the history and dispatches this event so the user
+  // knows the undo did not fully happen.
+  window.addEventListener('history-undo-failed', (e) => {
+    const detail = e && e.detail ? e.detail : {};
+    const failed = Number(detail.failedCount || 0);
+    const undone = Number(detail.undoneCount || 0);
+    const msg = failed > 0
+      ? `Couldn't undo ${failed} change${failed === 1 ? '' : 's'}${undone > 0 ? ` (${undone} undone)` : ''}`
+      : 'Undo failed';
+    showSnackbar(msg, { hideButton: true });
   });
 
   snackbarBtn.addEventListener('click', () => {
@@ -656,11 +649,7 @@ function wireUndo() {
 
 
 /* ================================================================================================
-   FAB MENU (Item 2)
-   ------------------------------------------------------------------------------------------------
-   The History list inside the menu is re-rendered on open and on every 'history-recorded'
-   event. Each row gets a small list-name label and an "Undo N" button — N is the number of
-   entries a sequential unwind from that row will undo (matching store.js v1.6).
+   FAB MENU
    ================================================================================================ */
 
 function renderHistoryList() {
@@ -679,12 +668,9 @@ function renderHistoryList() {
   }
   if (emptyEl) emptyEl.hidden = true;
 
-  // Newest first. Row at index 0 is the newest. An Undo on that row unwinds 1
-  // entry; the row at index N-1 unwinds N. That count is exactly what
-  // undoHistoryEntry(row.id) will undo (store.js v1.6).
   const total = entries.length;
   for (let displayIdx = 0; displayIdx < total; displayIdx++) {
-    const entry = entries[total - 1 - displayIdx]; // newest-first
+    const entry = entries[total - 1 - displayIdx];
     const unwindCount = displayIdx + 1;
 
     const li = document.createElement('li');
@@ -711,13 +697,11 @@ function renderHistoryList() {
       ? `Undo this entry and the ${unwindCount - 1} newer one${unwindCount - 1 === 1 ? '' : 's'}`
       : 'Undo this entry';
     btn.addEventListener('click', () => {
-      const ok = store.undoHistoryEntry(entry.id);
-      if (ok) {
-        renderHistoryList();
+      const result = store.undoHistoryEntry(entry.id);
+      renderHistoryList();
+      if (result && result.ok) {
         renderListSwitcher();
         render();
-      } else {
-        renderHistoryList();
       }
     });
 
@@ -930,10 +914,6 @@ function wireAuthEvents() {
 
 /* ================================================================================================
    SYNC STATUS BAR
-   ------------------------------------------------------------------------------------------------
-   Idle label is short ("↻ {time}") on all widths per round 3 Item 2; full-length text is
-   exposed as the button's title / aria-label. Error / syncing / update-available texts stay
-   full-length at every width.
    ================================================================================================ */
 
 function wireSyncStatusBar() {
