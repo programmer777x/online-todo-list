@@ -17,6 +17,10 @@
 //        line up across every row. Rows without a list name get an
 //        empty .history-item-list span; rows without a closing quote
 //        get an empty .history-item-tail span.
+// 1.30 — Round 8 Item 2: History row text no longer carries a trailing
+//        space before the closing quote. head.trimEnd() at the call site
+//        in renderHistoryList(); splitTrailingQuote() and the snackbar
+//        path are untouched.
 //
 // ================================================================================================
 //
@@ -35,6 +39,10 @@
 //   the shared grid alignment. The label cell is now always rendered
 //   (empty when absent), and the tail cell is always rendered (empty
 //   when the summary has no trailing quote). See 1.29.
+// - History rows showed a space before the closing quote when the
+//   recorded summary had a trailing space in its text. renderHistoryList()
+//   now trims the head at the call site only, leaving the snackbar and
+//   the grid layout unchanged. See 1.30.
 //
 // ================================================================================================
 
@@ -693,7 +701,7 @@ function renderHistoryList() {
 
     const textEl = document.createElement('span');
     textEl.className = 'history-item-text';
-    textEl.textContent = head;
+    textEl.textContent = head.trimEnd();
 
     // 4. Tail (ALWAYS rendered — empty when no closing quote).
     const tailEl = document.createElement('span');
