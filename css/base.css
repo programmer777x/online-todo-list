@@ -222,8 +222,7 @@ body {
 }
 
 .app-header.header-compact .header-secondary .sync-status-bar {
-  flex: 1 1 auto;
-  justify-content: center;
+  flex: 0 0 auto;
 }
 
 /* ---- List switcher ---- */
@@ -275,12 +274,22 @@ body {
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
+/* Undo and Redo as pills — same border/background/padding as the
+   other header pills. Round 6 Item 4. */
 .icon-button.header-pill {
   width: auto;
   height: auto;
-  min-width: 2rem;
-  min-height: 2rem;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
   font-size: 1rem;
+  border-radius: var(--radius-pill);
+  padding: var(--space-1) var(--space-2);
+}
+
+/* Disabled state (nothing to undo / redo) still fades. */
+.icon-button.header-pill:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 @media (max-width: 639px) {
@@ -1373,6 +1382,10 @@ select option {
 
 /* ================================================================================================
    17. UNDO SNACKBAR
+   ------------------------------------------------------------------------------------------------
+   Undo button first (left), summary head after it, trailing quote (when present) fixed at the end.
+   The head truncates with ellipsis; the tail never shrinks and never wraps. The snackbar's `[hidden]`
+   rules are load-bearing (author `display` overrides UA `[hidden]`).
    ================================================================================================ */
 
 .undo-snackbar {
@@ -1420,6 +1433,14 @@ select option {
   white-space: nowrap;
 }
 
+/* Trailing quote: fixed after the ellipsis. Never shrinks, never wraps. */
+.undo-snackbar-tail {
+  flex: 0 0 auto;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
 .undo-snackbar-button {
   flex: 0 0 auto;
   padding: var(--space-1) var(--space-3);
@@ -1454,14 +1475,10 @@ select option {
    ------------------------------------------------------------------------------------------------
    History rows are single-line and never wrap:
 
-     [Undo N button] [list-name label] [summary text]
+     [Undo N button] [list-name label] [summary head] [trailing quote if present]
 
-   - Button and label are flex: 0 0 auto (never shrink, never wrap).
-   - The label has max-width: 35% and text-overflow: ellipsis, so a very
-     long list name truncates instead of pushing the summary off.
-   - The summary is flex: 1 1 auto; min-width: 0; text-overflow: ellipsis;
-     white-space: nowrap. It truncates to fill whatever space is left.
-   - Container is flex-wrap: nowrap so all three stay on the same line.
+   Button / label / tail are flex: 0 0 auto (never shrink, never wrap).
+   The head truncates with ellipsis.
    ================================================================================================ */
 
 .fab-menu-button {
@@ -1564,7 +1581,6 @@ select option {
   gap: var(--space-1);
 }
 
-/* Single-line row: button / label / summary. Never wraps. */
 .history-item {
   display: flex;
   flex-wrap: nowrap;
@@ -1581,7 +1597,6 @@ select option {
   background: var(--card-bg-hover);
 }
 
-/* Undo button — first, fixed width, never shrinks or wraps. */
 .history-item-undo {
   flex: 0 0 auto;
   padding: var(--space-1) var(--space-3);
@@ -1609,7 +1624,6 @@ select option {
   box-shadow: var(--accent-glow);
 }
 
-/* List-name label — fixed width, truncates with ellipsis when long. */
 .history-item-list {
   flex: 0 0 auto;
   max-width: 35%;
@@ -1626,7 +1640,6 @@ select option {
   white-space: nowrap;
 }
 
-/* Summary text — takes the remaining space, truncates with ellipsis. */
 .history-item-text {
   flex: 1 1 auto;
   min-width: 0;
@@ -1634,6 +1647,13 @@ select option {
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-item-tail {
+  flex: 0 0 auto;
+  font-size: 0.875rem;
+  color: var(--text-primary);
   white-space: nowrap;
 }
 
