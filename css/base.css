@@ -116,6 +116,23 @@ body {
 
 /* ================================================================================================
    4. HEADER
+   ------------------------------------------------------------------------------------------------
+   .app-header           — brand on the left, controls on the right
+   .app-header-controls  — the right side
+   .header-primary       — List / Undo / Redo / Login group
+   .header-secondary     — Theme / Sync group
+   .header-pill          — shared pill treatment for undo, redo, auth, sync
+
+   Default (desktop, mobile landscape): one row.
+     .app-header-controls is flex-row, and .header-primary + .header-secondary
+     are inline flex groups so their contents lay out left-to-right in the
+     requested order: List, Undo, Redo, Login, Theme, Sync.
+
+   .header-compact (mobile portrait): two rows.
+     .app-header-controls wraps, and .header-secondary takes width: 100% so
+     it drops below .header-primary and its children sit on their own row.
+     The breakpoint matches the JS HEADER_COMPACT_QUERY (max-width: 639.98px
+     and orientation: portrait) so class and CSS stay in lockstep.
    ================================================================================================ */
 
 .app-header {
@@ -158,6 +175,75 @@ body {
   gap: var(--space-2);
   flex-wrap: wrap;
 }
+
+.header-primary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.header-secondary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+/* Shared pill treatment — undo, redo, auth, sync all read as one control row. */
+.header-pill {
+  border: 1px solid var(--input-border);
+  border-radius: var(--radius-pill);
+  background: var(--input-bg);
+  color: var(--text-secondary);
+  padding: var(--space-2) var(--space-4);
+  backdrop-filter: blur(var(--panel-blur));
+  -webkit-backdrop-filter: blur(var(--panel-blur));
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.header-pill:hover:not(:disabled) {
+  background: var(--card-bg-hover);
+  color: var(--text-primary);
+  border-color: var(--accent);
+}
+
+.header-pill:focus-visible {
+  outline: none;
+  box-shadow: var(--accent-glow);
+  border-color: var(--accent);
+}
+
+/* Compact (mobile portrait) — two rows: primary first, secondary second. */
+.app-header.header-compact {
+  align-items: stretch;
+}
+
+.app-header.header-compact .app-header-controls {
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+}
+
+.app-header.header-compact .header-primary {
+  width: 100%;
+}
+
+.app-header.header-compact .header-secondary {
+  width: 100%;
+}
+
+.app-header.header-compact .header-secondary .theme-select {
+  flex: 0 0 auto;
+}
+
+.app-header.header-compact .header-secondary .sync-status-bar {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+
+/* ---- List switcher ---- */
 
 .list-switcher {
   display: flex;
@@ -204,6 +290,16 @@ body {
   align-items: center;
   justify-content: center;
   transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+/* The undo and redo icons override the base icon-button's square footprint with
+   the pill shape so they sit in the row as peers of the auth / sync pills. */
+.icon-button.header-pill {
+  width: auto;
+  height: auto;
+  min-width: 2rem;
+  min-height: 2rem;
+  font-size: 1rem;
 }
 
 /* Only bump text-glyph buttons on mobile screens where the emoji renders overly large */
@@ -263,9 +359,10 @@ body {
 /* ================================================================================================
    4.5 SYNC STATUS BAR
    ------------------------------------------------------------------------------------------------
-   Item 3 restyle: now a pill button matching the list-switcher / auth-button treatment.
-   Sits under the header (not in the header row). The [hidden] rule below is load-bearing:
-   without it, `bar.hidden = true` in ui.js sets the attribute but `.sync-status-bar`'s own
+   The pill now lives inside .header-secondary (in the header's row / row 2). Its old
+   standalone-row placement (align-self: center plus a negative margin-top tuned for the row
+   beneath the header) is removed — the pill inherits the header's gap. The `[hidden]` rule
+   stays: without it, `bar.hidden = true` in ui.js sets the attribute but the author
    `display: inline-flex` overrides the UA `[hidden] { display: none }`, so the bar stays
    visible when signed out. Do not remove.
    ================================================================================================ */
@@ -275,10 +372,8 @@ body {
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
-  align-self: center;
   max-width: 100%;
   padding: var(--space-2) var(--space-4);
-  margin-top: calc(var(--space-2) * -1); /* Tighten gap below header */
   font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
@@ -1540,6 +1635,7 @@ select option {
 
 .history-item {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
@@ -1550,6 +1646,18 @@ select option {
 
 .history-item:hover {
   background: var(--card-bg-hover);
+}
+
+.history-item-list {
+  flex: 0 0 auto;
+  padding: 1px var(--space-2);
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-pill);
 }
 
 .history-item-text {
