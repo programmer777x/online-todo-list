@@ -50,6 +50,10 @@
          visible on small viewports (60vh -> min(75vh, calc(100vh - 160px)));
          .fab-menu-section gets min-height: 0 so the list can shrink inside
          the scrolling panel.
+   1.6 — Round 8 Item 2 correction: History row text column changed from
+         minmax(0, 1fr) to minmax(0, max-content) so short summaries keep
+         the closing quote flush against the text, leaving the empty space
+         on the right. Long text still truncates via the panel's width.
    ================================================================================================ */
 
 
@@ -1519,13 +1523,13 @@ select option {
      [button] [label] [text] [tail]
 
    The button and label columns size to their widest content across
-   rows (`max-content`), the text column fills the remaining space
-   (`minmax(0, 1fr)`) and truncates with ellipsis, and the tail column
-   is `max-content` and sits flush against the text (column-gap does
-   not apply between text and tail because they are adjacent cells in
-   the same grid; a small gap between tail and the next column is
-   inherited from the tail column's own boundary and does not add
-   space between the two visual neighbours). Round 7 Item 4.
+   rows (`max-content`), the text column sizes to its own content up to
+   the available space (`minmax(0, max-content)`) and truncates with
+   ellipsis when the content exceeds the panel width, and the tail
+   column is `max-content` and sits flush against the text (column-gap
+   does not apply between text and tail because they are adjacent cells
+   in the same grid). Round 7 Item 4; text column changed from 1fr to
+   max-content in Round 8 Item 2 correction.
    ================================================================================================ */
 
 .fab-menu-button {
@@ -1631,10 +1635,12 @@ select option {
 
 /* Grid row: [button] [label] [text] [tail]. Column gap for the two
    first gaps; the text→tail adjacency gets no gap because the tail
-   has a negative left margin equal to the gap. */
+   has a negative left margin equal to the gap. Text column is
+   minmax(0, max-content) so short rows keep the quote flush and long
+   rows truncate. */
 .history-item {
   display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  grid-template-columns: max-content max-content minmax(0, max-content) max-content;
   column-gap: var(--space-2);
   row-gap: 0;
   align-items: center;
