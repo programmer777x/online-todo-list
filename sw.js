@@ -270,6 +270,22 @@
 //       styling, and the sync pill's reposition into the header row with
 //       its old standalone-row tuning removed).
 //
+// 1.28 — Cache bump for the round-3 fixes: sequential undo and header
+//       layout. CACHE_NAME goes from todo-cache-v37 to todo-cache-v38 so
+//       returning clients fetch the updated js/store.js (undoHistoryEntry
+//       now unwinds from the newest entry down to and including the
+//       target, newest-first; dead entries are skipped and removed
+//       without aborting the chain; undone entries are pushed onto the
+//       redo stack in unwind order; the round-2 same-task prune rule is
+//       removed), js/ui.js (each History row's Undo button now shows
+//       "Undo N" matching the sequential unwind count; wireHeaderCompact
+//       moves undo/redo between the primary and secondary header groups
+//       at the compact breakpoint; the sync pill's idle label is short
+//       everywhere with the full text as title/aria-label), and
+//       css/base.css (shell widens to 1020px above the compact
+//       breakpoint; the compact two-row header layout now places
+//       List/Login on row 1 and Theme/Sync/Undo/Redo on row 2).
+//
 // ================================================================================================
 //
 // === ADDED ===
@@ -291,242 +307,136 @@
 //   cache and fetch the current CSS/JS. This was the reason recent UI fixes were not appearing
 //   even after a hard refresh — the v1 worker was serving cached assets before the network
 //   request ever went out. Bump this string on every deploy that changes cached files.
-// - Corrected the maskable icon filename in ASSETS_TO_CACHE from `./icons/icon-maskable-512.png`
-//   to `./icons/icon-maskable-512.png`, matching the actual file on disk. The old path caused
-//   `cache.addAll()` to reject during install, which silently aborted the precache step.
-// - Bumped CACHE_NAME from `todo-cache-v6` to `todo-cache-v8` so browsers fetch
-//   the header-init fix in js/ui.js and the getClient() export in js/sync.js
-//   instead of continuing to serve the pre-fix versions from the old cache.
-// - Bumped CACHE_NAME from `todo-cache-v8` to `todo-cache-v9` so browsers fetch
-//   the mutation-sync hooks in js/store.js and js/sync.js. Without the bump,
-//   returning clients would keep the pre-hooks store.js (no broadcast) and
-//   sync.js (no listeners, no auto-migration), and local changes would never
-//   reach Supabase on those devices.
-// - Bumped CACHE_NAME from `todo-cache-v9` to `todo-cache-v10` so browsers fetch
-//   the precise-mutation fix in js/store.js and the precise-payload
-//   pushList/pushTask in js/sync.js. Without the bump, returning clients
-//   would keep the broad-loop store.js from v9 and continue to hammer
-//   Supabase with hundreds of upserts per drag or keystroke.
-// - Bumped CACHE_NAME from `todo-cache-v10` to `todo-cache-v11` so browsers fetch
-//   the v1.6 js/sync.js -- the migration branch that reads `typeof state !==
-//   'undefined' ? state : window.state`, the pushList `created_at` fallback,
-//   and the "Sync: Pushing list/task" payload logging. Without this bump,
-//   returning clients would keep running the v10 sync.js whose migration
-//   branch is gated on `window.state` (always undefined here) and would
-//   never migrate.
-// - Bumped CACHE_NAME from `todo-cache-v11` to `todo-cache-v12` so browsers fetch
-//   the current js/render.js (whose cacheDom() populates dom.authPasswordInput)
-//   and the guarded js/ui.js. Without this bump, returning clients would stay
-//   on the v11 cache and the stale render.js would keep returning `undefined`
-//   for dom.authPasswordInput -- the exact failure that made the password
-//   sign-in handler throw silently on click.
-// - Bumped CACHE_NAME from `todo-cache-v12` to `todo-cache-v13` so browsers fetch
-//   the self-contained js/ui.js whose wireAuthEvents() looks up auth elements
-//   by id at function entry instead of reading them off render.js's top-level
-//   `const dom`. That removes the last cross-file coupling in the auth flow
-//   and the last silent failure mode it caused.
-// - Bumped CACHE_NAME from `todo-cache-v13` to `todo-cache-v14` so browsers fetch
-//   the debug-logged js/ui.js. The log is temporary diagnostic scaffolding;
-//   a future commit will remove it once the password sign-in path is confirmed
-//   working, and that commit will bump CACHE_NAME again.
-// - Bumped CACHE_NAME from `todo-cache-v14` to `todo-cache-v16` (skipping v15)
-//   to deliver the persistent-email auth modal: new index.html markup,
-//   the render.js cache additions for the new ids (authTitle, authSubtitle,
-//   authEmailHint, authEmailToggle), and the ui.js rewrite. The rewrite
-//   also removes the v1.7 debug log, so this bump simultaneously delivers
-//   the UX fix and the removal of the temporary password-printing
-//   diagnostic.
-// - Offline queue drained to empty on a failed flush. The v1.6 pushList /
-//   pushTask catch blocks called queueOfflineOperation() and then returned
-//   normally; processOfflineQueue's own try/catch therefore saw no error,
-//   counted the item as succeeded, and either overwrote PENDING_KEY with
-//   an empty `failed` array or removed it entirely. Every queue item was
-//   lost on the first flush attempt if the network was still down. The
-//   push handlers now return a boolean (true = landed, false = didn't),
-//   and processOfflineQueue keeps the failed items in PENDING_KEY. The
-//   inner re-queue is removed so a failure is recorded exactly once.
-// - Bumped CACHE_NAME from `todo-cache-v16` to `todo-cache-v17` so browsers
-//   fetch the offline-queue durability fix in js/sync.js. Without the bump,
-//   returning clients would keep running the v16 pushList/pushTask (which
-//   swallow errors and re-queue internally) and the v16 processOfflineQueue
-//   (which cannot see those failures and always clears the queue on a
-//   completed flush attempt).
-// - Bumped CACHE_NAME from `todo-cache-v17` to `todo-cache-v18` so browsers
-//   fetch the corrected v1.8 js/sync.js. The v1.7 split removed the
-//   catch-block re-queue from pushList/pushTask and left re-queueing to
-//   processOfflineQueue, which only runs on a flush attempt — so a live
-//   mutation that failed while offline never entered PENDING_KEY at all
-//   and was lost. v1.8 restores the catch-block re-queue and rewrites
-//   processOfflineQueue to abort on the first failed push (leaving the
-//   remaining items in localStorage) instead of clearing the queue after
-//   a partial success. Without this bump, returning clients would keep
-//   the v17 sync.js and continue losing offline mutations.
-// - Bumped CACHE_NAME from `todo-cache-v18` to `todo-cache-v19` so browsers
-//   fetch the manual sync status bar. The new UI (index.html, css/base.css,
-//   js/sync.js, js/ui.js) provides a way to trigger a sync without a full
-//   app restart, specifically for iOS standalone PWAs that have no reload
-//   control. This bump also delivers the font-size fix that makes the
-//   ＋ and ✎ list buttons match the size of the 🗑 delete button.
-// - Bumped CACHE_NAME from `todo-cache-v19` to `todo-cache-v20` so browsers
-//   fetch the manual sync fix. The boolean return from syncNow() lets the
-//   UI show the "Sync failed" state on a network error instead of
-//   silently assuming success and showing a stale timestamp.
-// - Bumped CACHE_NAME from `todo-cache-v21` to `todo-cache-v22` so browsers
-//   fetch the sync-event fix. The 'sync-state-changed' event dispatched by
-//   fetchRemoteState() and syncNow() tells the UI to update its timestamp
-//   and clear the syncing state, and the fake dispatch on initial load
-//   prevents the status bar from lagging on the first page view.
-// - Bumped CACHE_NAME from `todo-cache-v22` to `todo-cache-v23` so browsers
-//   fetch the list rename fix. handleListRename() now explicitly dispatches
-//   the 'sync-list-change' event, ensuring that renaming a list triggers
-//   the mutation hook and pushes the new name to Supabase. Without this
-//   bump, returning clients would keep the v22 ui.js where renaming a list
-//   only saved locally and never reached the cloud.
-// - Bumped CACHE_NAME from `todo-cache-v23` to `todo-cache-v24` so browsers
-//   fetch the signed-out sync bar fix. The sync status bar now remains
-//   completely hidden when the user is signed out, and the click handler
-//   returns early if no session exists, preventing a misleading "Sync failed"
-//   error state.
-// - Bumped CACHE_NAME from `todo-cache-v24` to `todo-cache-v25` so browsers
-//   fetch the reload sync behavior. The sync button now flushes the offline
-//   queue and forces a page reload, wiping JS memory and re-running
-//   initSync() to guarantee fresh data from Supabase. This avoids the UI
-//   failing to update when fetchRemoteState() is called in the background.
-// - Bumped CACHE_NAME from `todo-cache-v26` to `todo-cache-v27` so browsers
-//   fetch the icon size fix. The list-switcher text glyphs (＋ and ✎) are
-//   now sized at 1rem to visually match the delete button (🗑) on mobile.
-// - Bumped CACHE_NAME from `todo-cache-v27` to `todo-cache-v28` so browsers
-//   fetch the sign-in reload fix. The app now reloads immediately after a
-//   successful sign-in (both password and magic-link) to ensure fresh cloud
-//   data is displayed.
-// - Bumped CACHE_NAME from `todo-cache-v28` to `todo-cache-v29` so browsers
-//   fetch the sign-in reload and icon fixes. The app now reloads immediately
-//   after a successful sign-in via sync.js (clearing the sessionStorage flag
-//   on sign-out in ui.js), and the list-switcher text glyphs are sized
-//   individually to match the delete button.
-// - Bumped CACHE_NAME from `todo-cache-v29` to `todo-cache-v30` so browsers
-//   fetch the import sync and auth reload fixes. The import handler now
-//   dispatches sync events for every imported task, and the auto-reload on
-//   sign-in has been moved into the onAuthStateChange listener to fix the
-//   race condition.
-// - The HTML shell could be pinned to a stale cache entry, so a deployed
-//   index.html change would not reach a returning user until they cleared
-//   storage or the cache name was bumped. The fetch listener now handles
-//   pathname '/' and 'index.html' requests network-first, falling back to
-//   caches.match('./index.html') only when the network fetch rejects. All
-//   other assets stay cache-first.
-// - Bumped CACHE_NAME from `todo-cache-v30` to `todo-cache-v31` so browsers
-//   fetch the delayed-import / no-reload round: js/ui.js (import loop with
-//   150ms spacing, no reload from password sign-in, no reload from the sync
-//   bar) and js/sync.js (no auto-reload on SIGNED_IN). Combined with the
-//   new network-first HTML shell, returning clients pick up these fixes on
-//   the next load even though the shell is no longer cached.
-// - Imported tasks could look partial after a reload because the cache-first
-//   branch cached Supabase GET responses and served a pre-import snapshot on
-//   a repeat identical read. The fetch listener now bypasses all Supabase
-//   traffic, so reads always come from the network. See 1.22.
-// - Bumped CACHE_NAME from `todo-cache-v32` to `todo-cache-v33` so browsers
-//   fetch the sync-bar error state, service worker update check, and
-//   sign-in auto-sync round: js/ui.js (showError() on failed manual sync;
-//   checkForUpdate() after a successful sync, reload on next tap while
-//   updateAvailable is true) and js/sync.js (SIGNED_IN handler awaits
-//   syncNow() and re-renders the list switcher and task list). Without
-//   this bump, returning clients would stay on v32 and would not get the
-//   sign-in auto-sync or the update-prompt path.
-// - A manual sync while offline looked successful. fetchRemoteState()'s
-//   catch block logged the failure and returned normally, so syncNow()
-//   saw no error and wrote a fresh success timestamp; the sync bar then
-//   rendered the idle label with a time from the failed sync. The catch
-//   block now dispatches 'sync-state-changed' and rethrows, so syncNow()
-//   returns false, no timestamp is written, and the showError() path
-//   paints the retry label. See 1.24.
-// - Bumped CACHE_NAME from `todo-cache-v33` to `todo-cache-v34` so browsers
-//   fetch the fetchRemoteState rethrow fix in js/sync.js. Without this
-//   bump, returning clients would stay on v33 where a failed manual sync
-//   still wrote a fresh timestamp and showed the idle label with the
-//   failed-sync time.
-// - The signed-out sync bar was visible because `.sync-status-bar`
-//   declared `display: flex`, which overrode the UA `[hidden] { display:
-//   none }` rule — so `bar.hidden = true` set the attribute and changed
-//   nothing on screen. Added a `.sync-status-bar[hidden] { display: none;
-//   }` rule in css/base.css so the attribute wins when present.
-// - Sign-in network failures were silent and left the button stuck. Both
-//   sign-in handlers awaited the Supabase call without try/catch and only
-//   checked the returned { error } object. A network failure throws
-//   TypeError: Failed to fetch, which propagated as an unhandled rejection
-//   — no message shown, and the "Signing in..." / "Sending..." disabled
-//   state never reset because the reset lines after the await never ran.
-//   Both handlers now catch the throw, reset the button, and write a
-//   friendly connection message into the modal's existing error line.
-//   See 1.25.
-// - Bumped CACHE_NAME from `todo-cache-v34` to `todo-cache-v35` so browsers
-//   fetch the two fixes above: css/base.css (the `[hidden]` rule) and
-//   js/ui.js (the try/catch around both sign-in handlers). Without this
-//   bump, returning clients would stay on v34 and neither Item 9 (sync
-//   bar hidden when signed out) nor Item 5 (friendly network-error
-//   message) would reach them.
-// - No undo existed anywhere. Added a two-layer undo (snackbar + Recent
-//   Changes list) backed by js/store.js history recording. See 1.26.
-// - The header grew with every new control. Added a ⋯ FAB menu (bottom-
-//   right) whose first tenant is the Recent Changes list. Sync bar stays
-//   in the header row. See 1.26.
-// - The sync bar looked like its own stray section (bare centered muted
-//   text). Restyled as a pill matching the list-switcher / auth-button
-//   treatment, keeping the [hidden] rule. See 1.26.
-// - The password step's email field was locked, so a wrong address typed
-//   on the link step couldn't be fixed before password sign-in. Dropped
-//   the lock and updated the empty-email copy to "Please enter your email
-//   address." See 1.26.
-// - Bumped CACHE_NAME from `todo-cache-v35` to `todo-cache-v36` so browsers
-//   fetch the four-item feature batch: index.html, js/store.js, js/ui.js,
-//   and css/base.css. Without this bump, returning clients would stay on
-//   v35 and none of the undo / menu / pill / editable-email changes would
-//   reach them.
-// - The undo snackbar never appeared because store.js's recordHistory()
-//   did not dispatch 'history-recorded'. Both the History panel (re-rendered
-//   on open) and Ctrl+Z (which calls undoLast() directly) worked without it,
-//   which is why the bug was invisible in those paths. recordHistory() now
-//   dispatches 'history-recorded' with { summary, id } after saving. See 1.27.
-// - History entries were not scoped to a list. An undoAction carried only
-//   { op, taskId }, so applyUndoAction() applied it to whatever list was
-//   active when the user hit Undo. After a sign-in swapped the loaded set,
-//   pre-login entries got applied to the wrong list. Every undoAction now
-//   carries a listId, and applyUndoAction() applies to that list. See 1.27.
-// - Dead history entries stayed in the list forever. If an entry's target
-//   task or list was already gone, undo failed silently and the entry could
-//   never be applied. applyUndoAction() now returns false in that case and
-//   the entry is dropped. Undoing an entry also prunes later entries for
-//   the SAME task (they were built on the reverted change). See 1.27.
-// - History carried stale entries across a data replacement. Sign-in
-//   loads a different list set, but old history (recorded against the
-//   pre-login lists) stayed in localStorage. hydrateFromRemote() now calls
-//   clearHistory() when it replaces the loaded data. See 1.27.
-// - The sync button did not rebuild the list picker. syncNow() →
-//   fetchRemoteState() → hydrateFromRemote() → render() only re-renders
-//   tasks; the picker was untouched until a full page reload. The sync-bar
-//   tap now calls renderListSwitcher() alongside render() after a
-//   successful syncNow(), matching what the sign-in path already does.
-//   See 1.27.
-// - The header was visually unorganized on mobile portrait: the sync pill
-//   sat on its own row and the ↩ glyph floated between pills. The markup
-//   now groups the header into .header-primary (List / Undo / Redo / Login)
-//   and .header-secondary (Theme / Sync), and a .header-compact class
-//   (toggled by wireHeaderCompact() at the same query) stacks the groups
-//   into two rows in portrait. See 1.27.
-// - No redo existed. Every entry now records a redoAction alongside the
-//   undoAction, and a separate redo stack is pushed on undo and cleared
-//   on any new recorded action or on hydrateFromRemote(). The header ↪
-//   button and Ctrl+Y / Ctrl+Shift+Z call window.store.redoLast(). See
-//   1.27.
-// - Bumped CACHE_NAME from `todo-cache-v36` to `todo-cache-v37` so browsers
-//   fetch the round-2 fixes above: js/store.js, js/ui.js, index.html, and
-//   css/base.css. Without this bump, returning clients would stay on v36
-//   and none of the snackbar / history-rules / picker-rebuild / header-
-//   layout / redo changes would reach them.
+// - Corrected the maskable icon filename in ASSETS_TO_CACHE to match the actual file on disk.
+//   The old path caused `cache.addAll()` to reject during install, which silently aborted the
+//   precache step.
+// - Every cache-bump entry below corresponds to a `chore(sw): bump cache to todo-cache-vN`
+//   commit that ships the named source files to returning clients. The entry names what the
+//   bump delivers so a future agent reading sw.js alone can see why the version moved.
+// - Bumped CACHE_NAME from `todo-cache-v6` to `todo-cache-v8` so browsers fetch the header-init
+//   fix in js/ui.js and the getClient() export in js/sync.js instead of continuing to serve the
+//   pre-fix versions from the old cache.
+// - Bumped CACHE_NAME from `todo-cache-v8` to `todo-cache-v9` so browsers fetch the
+//   mutation-sync hooks in js/store.js and js/sync.js.
+// - Bumped CACHE_NAME from `todo-cache-v9` to `todo-cache-v10` so browsers fetch the
+//   precise-mutation fix in js/store.js and the precise-payload pushList/pushTask in
+//   js/sync.js.
+// - Bumped CACHE_NAME from `todo-cache-v10` to `todo-cache-v11` so browsers fetch the v1.6
+//   js/sync.js -- the migration branch that reads `typeof state !== 'undefined' ? state :
+//   window.state`, the pushList `created_at` fallback, and the "Sync: Pushing list/task"
+//   payload logging.
+// - Bumped CACHE_NAME from `todo-cache-v11` to `todo-cache-v12` so browsers fetch the current
+//   js/render.js (whose cacheDom() populates dom.authPasswordInput) and the guarded js/ui.js.
+// - Bumped CACHE_NAME from `todo-cache-v12` to `todo-cache-v13` so browsers fetch the self-
+//   contained js/ui.js whose wireAuthEvents() looks up auth elements by id at function entry
+//   instead of reading them off render.js's top-level `const dom`.
+// - Bumped CACHE_NAME from `todo-cache-v13` to `todo-cache-v14` so browsers fetch the debug-
+//   logged js/ui.js. The log is temporary diagnostic scaffolding.
+// - Bumped CACHE_NAME from `todo-cache-v14` to `todo-cache-v16` (skipping v15) to deliver the
+//   persistent-email auth modal: new index.html markup, the render.js cache additions for the
+//   new ids, and the ui.js rewrite.
+// - Fixed the offline-queue flush wiping the queue on a failed attempt. The push handlers now
+//   return a boolean (true = landed, false = didn't), and processOfflineQueue aborts on the
+//   first failure instead of clearing the queue.
+// - Bumped CACHE_NAME from `todo-cache-v16` to `todo-cache-v17` so browsers fetch the offline-
+//   queue durability fix in js/sync.js.
+// - Bumped CACHE_NAME from `todo-cache-v17` to `todo-cache-v18` so browsers fetch the corrected
+//   v1.8 js/sync.js (catch-block re-queue + abort-on-failure flush).
+// - Bumped CACHE_NAME from `todo-cache-v18` to `todo-cache-v19` so browsers fetch the manual
+//   sync status bar (index.html, css/base.css, js/sync.js, js/ui.js) and the font-size fix for
+//   the ＋ and ✎ list buttons.
+// - Bumped CACHE_NAME from `todo-cache-v19` to `todo-cache-v20` so browsers fetch the manual
+//   sync fix (boolean return from syncNow() lets the UI show the "Sync failed" state).
+// - Bumped CACHE_NAME from `todo-cache-v21` to `todo-cache-v22` so browsers fetch the sync-
+//   event fix (the 'sync-state-changed' event dispatched by fetchRemoteState() and syncNow()).
+// - Bumped CACHE_NAME from `todo-cache-v22` to `todo-cache-v23` so browsers fetch the list
+//   rename fix (handleListRename() now explicitly dispatches 'sync-list-change').
+// - Bumped CACHE_NAME from `todo-cache-v23` to `todo-cache-v24` so browsers fetch the signed-
+//   out sync bar fix (bar stays hidden when signed out).
+// - Bumped CACHE_NAME from `todo-cache-v24` to `todo-cache-v25` so browsers fetch the reload
+//   sync behavior. (Later reverted — see 1.26's manual-sync-in-place change.)
+// - Bumped CACHE_NAME from `todo-cache-v26` to `todo-cache-v27` so browsers fetch the icon size
+//   fix for the list-switcher text glyphs.
+// - Bumped CACHE_NAME from `todo-cache-v27` to `todo-cache-v28` so browsers fetch the sign-in
+//   reload fix. (Later reverted — see 1.27's no-reload round.)
+// - Bumped CACHE_NAME from `todo-cache-v28` to `todo-cache-v29` so browsers fetch the sign-in
+//   reload and icon fixes.
+// - Bumped CACHE_NAME from `todo-cache-v29` to `todo-cache-v30` so browsers fetch the import
+//   sync and auth reload fixes.
+// - The HTML shell could be pinned to a stale cache entry. The fetch listener now handles
+//   pathname '/' and 'index.html' requests network-first, falling back to caches.match on
+//   offline only.
+// - Bumped CACHE_NAME from `todo-cache-v30` to `todo-cache-v31` so browsers fetch the delayed-
+//   import / no-reload round (js/ui.js and js/sync.js).
+// - Imported tasks could look partial after a reload because the cache-first branch cached
+//   Supabase GET responses. The fetch listener now bypasses all Supabase traffic.
+// - Bumped CACHE_NAME from `todo-cache-v32` to `todo-cache-v33` so browsers fetch the sync-bar
+//   error state, service worker update check, and sign-in auto-sync round.
+// - A manual sync while offline looked successful. fetchRemoteState()'s catch block logged the
+//   failure and returned normally; the catch now rethrows so syncNow() returns false.
+// - Bumped CACHE_NAME from `todo-cache-v33` to `todo-cache-v34` so browsers fetch the
+//   fetchRemoteState rethrow fix in js/sync.js.
+// - The signed-out sync bar was visible because `.sync-status-bar` declared `display: flex`,
+//   overriding the UA `[hidden] { display: none }`. Added a `.sync-status-bar[hidden] { display:
+//   none; }` rule in css/base.css so the attribute wins when present.
+// - Sign-in network failures were silent and left the button stuck. Both sign-in handlers now
+//   catch the throw, reset the button, and write a friendly connection message.
+// - Bumped CACHE_NAME from `todo-cache-v34` to `todo-cache-v35` so browsers fetch the two fixes
+//   above: css/base.css (the `[hidden]` rule) and js/ui.js (the try/catch around both sign-in
+//   handlers).
+// - No undo existed anywhere. Added a two-layer undo (snackbar + Recent Changes list) backed by
+//   js/store.js history recording.
+// - The header grew with every new control. Added a ⋯ FAB menu (bottom-right) whose first
+//   tenant is the Recent Changes list. Sync bar stays in the header row.
+// - The sync bar looked like its own stray section. Restyled as a pill matching the
+//   list-switcher / auth-button treatment, keeping the [hidden] rule.
+// - The password step's email field was locked. Dropped the lock and updated the empty-email
+//   copy to "Please enter your email address."
+// - Bumped CACHE_NAME from `todo-cache-v35` to `todo-cache-v36` so browsers fetch the four-item
+//   feature batch: index.html, js/store.js, js/ui.js, and css/base.css.
+// - The undo snackbar never appeared because store.js's recordHistory() did not dispatch
+//   'history-recorded'. recordHistory() now dispatches it.
+// - History entries were not scoped to a list. Every undoAction now carries a listId, and
+//   applyUndoAction() applies to that list.
+// - Dead history entries stayed in the list forever. applyUndoAction() now returns false in
+//   that case and the entry is dropped.
+// - History carried stale entries across a data replacement. hydrateFromRemote() now calls
+//   clearHistory() when it replaces the loaded data.
+// - The sync button did not rebuild the list picker. The sync-bar tap now calls
+//   renderListSwitcher() alongside render() after a successful syncNow().
+// - The header was visually unorganized on mobile portrait. The markup now groups the header
+//   into .header-primary and .header-secondary, and a .header-compact class stacks the groups
+//   into two rows in portrait.
+// - No redo existed. Every entry now records a redoAction alongside the undoAction, and a
+//   separate redo stack is pushed on undo and cleared on any new recorded action or on
+//   hydrateFromRemote(). The header ↪ button and Ctrl+Y / Ctrl+Shift+Z call
+//   window.store.redoLast().
+// - Bumped CACHE_NAME from `todo-cache-v36` to `todo-cache-v37` so browsers fetch the round-2
+//   fixes: js/store.js, js/ui.js, index.html, and css/base.css.
+// - Undoing an older entry left later entries stuck in the history. The per-entry skip model
+//   is replaced by sequential unwind: undoHistoryEntry(id) now undoes entry N and every entry
+//   newer than it, newest-first, one at a time. The round-2 same-task prune rule is removed.
+//   Dead entries inside the unwind are skipped and removed without aborting the chain, and
+//   undone entries are pushed onto the redo stack in unwind order.
+// - The History row Undo button used to just say "Undo". Each row now shows "Undo N" where N is
+//   the number of entries the sequential unwind will undo.
+// - The header controls could not fit one row on desktop because the shell was capped at 760px.
+//   The shell widens to 1020px above the compact breakpoint, and the sync pill uses a short
+//   idle label ("↻ {time}") at every width with the full text as the button's title /
+//   aria-label.
+// - The compact header layout put Undo and Redo on row 1 with the list and login, leaving no
+//   room for Login on a narrow screen. wireHeaderCompact now moves Undo and Redo into
+//   .header-secondary at the compact breakpoint, so row 1 is List + Login and row 2 is Theme +
+//   Sync + Undo + Redo.
+// - Bumped CACHE_NAME from `todo-cache-v37` to `todo-cache-v38` so browsers fetch the round-3
+//   fixes: js/store.js (sequential unwind), js/ui.js ("Undo N" button + header group flip in
+//   compact + short sync label everywhere), and css/base.css (wider shell on desktop /
+//   landscape + compact two-row header). Without this bump, returning clients would stay on
+//   v37 and none of the sequential-undo or header-layout changes would reach them.
 //
 // ================================================================================================
 
-const CACHE_NAME = 'todo-cache-v37';
+const CACHE_NAME = 'todo-cache-v38';
 
 const ASSETS_TO_CACHE = [
   './',
