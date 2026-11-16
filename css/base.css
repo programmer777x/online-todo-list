@@ -60,6 +60,7 @@
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
   --shell-max-width: 760px;
+  --shell-max-width-wide: 1020px;
   --transition-fast: 120ms ease;
   --transition-med: 220ms ease;
 
@@ -103,15 +104,25 @@ body {
 
 /* ================================================================================================
    3. APP SHELL
+   ------------------------------------------------------------------------------------------------
+   Wide default: 1020px so the six header controls fit one row on desktop / landscape.
+   Compact (mobile portrait, ≤ 639.98px wide AND portrait): back to 760px so the two-row
+   header has room and the section cards stay readable.
    ================================================================================================ */
 
 .app-shell {
-  max-width: var(--shell-max-width);
+  max-width: var(--shell-max-width-wide);
   margin: 0 auto;
   padding: var(--space-5) var(--space-4) var(--space-6);
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+}
+
+@media (max-width: 639.98px) and (orientation: portrait) {
+  .app-shell {
+    max-width: var(--shell-max-width);
+  }
 }
 
 /* ================================================================================================
@@ -129,10 +140,13 @@ body {
      requested order: List, Undo, Redo, Login, Theme, Sync.
 
    .header-compact (mobile portrait): two rows.
-     .app-header-controls wraps, and .header-secondary takes width: 100% so
-     it drops below .header-primary and its children sit on their own row.
-     The breakpoint matches the JS HEADER_COMPACT_QUERY (max-width: 639.98px
-     and orientation: portrait) so class and CSS stay in lockstep.
+     .app-header-controls stacks the two groups vertically. The JS
+     (wireHeaderCompact) moves #undo-button and #redo-button into
+     .header-secondary so the rows read:
+       Row 1: List, Login
+       Row 2: Theme, Sync, Undo, Redo
+     The breakpoint matches the JS HEADER_COMPACT_QUERY so class and CSS
+     stay in lockstep.
    ================================================================================================ */
 
 .app-header {
@@ -176,19 +190,13 @@ body {
   flex-wrap: wrap;
 }
 
-.header-primary {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-width: 0;
-  flex-wrap: wrap;
-}
-
+.header-primary,
 .header-secondary {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 /* Shared pill treatment — undo, redo, auth, sync all read as one control row. */
@@ -197,7 +205,7 @@ body {
   border-radius: var(--radius-pill);
   background: var(--input-bg);
   color: var(--text-secondary);
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   backdrop-filter: blur(var(--panel-blur));
   -webkit-backdrop-filter: blur(var(--panel-blur));
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
@@ -226,12 +234,13 @@ body {
   width: 100%;
 }
 
-.app-header.header-compact .header-primary {
+.app-header.header-compact .header-primary,
+.app-header.header-compact .header-secondary {
   width: 100%;
 }
 
 .app-header.header-compact .header-secondary {
-  width: 100%;
+  justify-content: flex-start;
 }
 
 .app-header.header-compact .header-secondary .theme-select {
@@ -302,7 +311,6 @@ body {
   font-size: 1rem;
 }
 
-/* Only bump text-glyph buttons on mobile screens where the emoji renders overly large */
 @media (max-width: 639px) {
   #list-new-button {
     font-size: 1.125rem;
@@ -339,7 +347,7 @@ body {
   background: var(--input-bg);
   border: 1px solid var(--input-border);
   border-radius: var(--radius-pill);
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   cursor: pointer;
   transition: border-color var(--transition-fast), background var(--transition-fast);
   backdrop-filter: blur(var(--panel-blur));
@@ -359,12 +367,10 @@ body {
 /* ================================================================================================
    4.5 SYNC STATUS BAR
    ------------------------------------------------------------------------------------------------
-   The pill now lives inside .header-secondary (in the header's row / row 2). Its old
-   standalone-row placement (align-self: center plus a negative margin-top tuned for the row
-   beneath the header) is removed — the pill inherits the header's gap. The `[hidden]` rule
-   stays: without it, `bar.hidden = true` in ui.js sets the attribute but the author
-   `display: inline-flex` overrides the UA `[hidden] { display: none }`, so the bar stays
-   visible when signed out. Do not remove.
+   The pill lives in .header-secondary. The `[hidden]` rule below is load-bearing: without it,
+   `bar.hidden = true` in ui.js sets the attribute but `.sync-status-bar`'s own `display:
+   inline-flex` overrides the UA `[hidden] { display: none }`, so the bar stays visible when
+   signed out. Do not remove.
    ================================================================================================ */
 
 .sync-status-bar {
@@ -373,7 +379,7 @@ body {
   justify-content: center;
   gap: var(--space-2);
   max-width: 100%;
-  padding: var(--space-2) var(--space-4);
+  padding: var(--space-2) var(--space-3);
   font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 600;
@@ -387,7 +393,6 @@ body {
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 
-/* The `hidden` attribute must win over the author `display` above. Do not remove. */
 .sync-status-bar[hidden] {
   display: none;
 }
@@ -415,7 +420,6 @@ body {
   line-height: 1;
 }
 
-/* Spin animation for the icon while syncing */
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
@@ -425,7 +429,6 @@ body {
   animation: spin 1s linear infinite;
 }
 
-/* Error state text color */
 .sync-status-bar.is-error {
   color: var(--danger);
   border-color: var(--danger);
@@ -433,7 +436,7 @@ body {
 
 .sync-status-bar.is-error:hover:not(:disabled) {
   color: var(--danger);
-  background: var(--accent-soft); /* Subtle error highlight */
+  background: var(--accent-soft);
   border-color: var(--danger);
 }
 
@@ -765,8 +768,6 @@ body {
   box-shadow: var(--accent-glow);
 }
 
-/* ---- Inline action controls (desktop only) --------------------------------------------------- */
-
 .task-actions {
   flex: 0 0 auto;
   display: flex;
@@ -824,10 +825,6 @@ body {
   outline: none;
   box-shadow: var(--accent-glow);
 }
-
-/* ---- ⋯ menu button (mobile only) -------------------------------------------------------------
-   VISIBLE BY DEFAULT. Hidden above the breakpoint by section 14. See the header comment for why
-   the default is "visible" rather than "hidden". */
 
 .task-menu-button {
   flex: 0 0 auto;
@@ -1032,30 +1029,18 @@ body {
   border-color: var(--accent-hover);
 }
 
-/* Force solid backgrounds matching the theme, avoiding alpha-channel rendering bugs */
 select option {
   background-color: var(--menu-bg);
   color: var(--text-primary);
   font-weight: 600;
 }
 
-/* Avocado needs a visibly green tint: --input-bg (#fcfdf6) is too pale to read as green */
 [data-theme="avocado"] select option {
   background-color: #dcedc8;
 }
 
 /* ================================================================================================
    12. TASK ACTION MENU
-   ------------------------------------------------------------------------------------------------
-   Mobile-only dropdown, anchored to the ⋯ button's viewport coordinates. Rendered by render.js
-   into `document.body` (not into the task row) specifically to escape the `.task-section`
-   `backdrop-filter` stacking context — a menu rendered inside a blurred parent cannot float
-   above a subsequent section no matter what z-index it carries.
-
-   Because the menu is body-mounted, its position is `fixed` and its top/left pixels are set
-   inline by `positionMenu()` in render.js. The CSS here supplies the box, the animation, and
-   the z-index that puts it above everything else on the page. Visibility (whether the menu
-   exists at all) is controlled by JS: `renderActionMenu` returns null unless a menu is open.
    ================================================================================================ */
 
 .task-action-menu {
@@ -1189,24 +1174,13 @@ select option {
 
 /* ================================================================================================
    14. RESPONSIVE
-   ------------------------------------------------------------------------------------------------
-   Desktop-only hiding lives here, and ONLY here. There is no base display: none to undo.
-
-     min-width: 640px  -> inline actions shown, ⋯ button + menu hidden
-     max-width: 639.98px -> density and tap-target adjustments only (no visibility changes)
-     max-width: 420px  -> tighter spacing
-     min-width: 900px  -> shell breathing room
    ================================================================================================ */
-
-/* ---- Desktop: hide the mobile ⋯ controls, keep the inline ones --------------------------------- */
 
 @media (min-width: 640px) {
   .task-menu-button {
     display: none;
   }
 }
-
-/* ---- Mobile: hide the desktop inline controls ------------------------------------------------- */
 
 @media (max-width: 639.98px) {
   .task-actions {
@@ -1227,8 +1201,6 @@ select option {
   }
 }
 
-/* ---- Density adjustments (below 420px) ------------------------------------------------------- */
-
 @media (max-width: 420px) {
   .app-shell {
     padding: var(--space-3) var(--space-3) var(--space-5);
@@ -1237,11 +1209,6 @@ select option {
 
   .app-title {
     font-size: 1.25rem;
-  }
-
-  .app-header-controls {
-    width: 100%;
-    justify-content: space-between;
   }
 
   .list-select {
@@ -1280,8 +1247,6 @@ select option {
   }
 }
 
-/* ---- Desktop breathing room (900px and up) --------------------------------------------------- */
-
 @media (min-width: 900px) {
   .app-shell {
     padding-top: var(--space-6);
@@ -1292,7 +1257,6 @@ select option {
    15. DRAG-TO-REORDER (SortableJS)
    ================================================================================================ */
 
-/* The handle that initiates the drag. SortableJS uses this via the `handle` option. */
 .task-drag-handle {
   flex: 0 0 auto;
   width: 16px;
@@ -1312,22 +1276,16 @@ select option {
   color: var(--text-secondary);
 }
 
-/* The clone that follows the cursor while dragging (fallback mode). Slightly raised so it
-   reads as "in flight" against the rows underneath. */
 .sortable-drag {
   opacity: 0.9;
   box-shadow: 0 6px 18px var(--panel-shadow, rgba(0, 0, 0, 0.35));
   border-radius: var(--radius-md);
 }
 
-/* The original item left in place as a placeholder. */
 .sortable-chosen {
   background: var(--card-bg-hover);
 }
 
-/* Drop-target hint: the row currently under the dragged item gets a subtle accent edge so the
-   user can see where it will land. Paired with .sortable-ghost (the placeholder left behind),
-   this is the visible drop indicator that was missing. */
 .sortable-ghost {
   border: 1px dashed var(--accent);
   border-radius: var(--radius-md);
@@ -1335,7 +1293,6 @@ select option {
   opacity: 0.6;
 }
 
-/* Hide the drag handle when the view is filtered by a search query. */
 .sections:has(.task-text mark) .task-drag-handle {
   display: none;
 }
@@ -1448,11 +1405,7 @@ select option {
 }
 
 /* ================================================================================================
-   17. UNDO SNACKBAR (Item 1)
-   ------------------------------------------------------------------------------------------------
-   Bottom-center floating banner shown by ui.js after each history-recorded action. Hidden by
-   default; the JS sets `hidden = false` to show it and starts a 5s auto-dismiss timer. The
-   banner is a sibling of .app-shell, so it is not affected by the shell's flex layout.
+   17. UNDO SNACKBAR
    ================================================================================================ */
 
 .undo-snackbar {
@@ -1522,15 +1475,7 @@ select option {
 }
 
 /* ================================================================================================
-   18. FAB MENU (Item 2)
-   ------------------------------------------------------------------------------------------------
-   The ⋯ button bottom-right opens #fab-menu-panel above it. Panel holds the Recent Changes
-   list rendered by ui.js from window.store.loadHistory(). The panel has a max-height and
-   vertical scroll so a full 20-entry history does not push off-screen.
-
-   Mobile-only? No — the FAB is visible at every width by design (undo is a daily action and
-   the header is already crowded on desktop too). Only the inline task action controls have a
-   desktop/mobile split.
+   18. FAB MENU
    ================================================================================================ */
 
 .fab-menu-button {
