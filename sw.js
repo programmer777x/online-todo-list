@@ -19,15 +19,18 @@
 //
 // === REVISIONS ===
 //
-// 1.1 through 1.29 — prior rounds. See 1.30 for the current bump.
+// 1.1 through 1.30 — prior rounds. See 1.31 for the current bump.
 //
-// 1.30 — Cache bump for the round-5 fix: History row Undo buttons to
-//        the front. CACHE_NAME goes from todo-cache-v39 to
-//        todo-cache-v40 so returning clients fetch the updated
-//        js/ui.js whose renderHistoryList() now renders each row as
-//        [Undo N button] [summary text] [list-name label] instead of
-//        putting the button at the end. The snackbar is unchanged —
-//        its Undo button stays first as built in round 4.
+// 1.31 — Cache bump for the round-5 fix: History row Undo buttons to
+//        the front + rows never wrap. CACHE_NAME goes from
+//        todo-cache-v39 to todo-cache-v40 so returning clients fetch
+//        the updated js/ui.js whose renderHistoryList() renders each
+//        row as [Undo N button] [list-name label] [summary text], and
+//        the updated css/base.css whose .history-item is flex-wrap:
+//        nowrap with a fixed-width button, a 35%-max label that
+//        truncates with ellipsis, and a summary that fills the
+//        remaining space and truncates with ellipsis. The snackbar
+//        is unchanged from round 4.
 //
 // ================================================================================================
 //
@@ -79,7 +82,7 @@
 // - v37 → v38: sequential undo + header row fixes.
 // - v38 → v39: silent sequential-undo failure fix + snackbar Undo first +
 //              Sync before Theme.
-// - v39 → v40: History row Undo buttons to the front.
+// - v39 → v40: History row Undo buttons to the front + rows never wrap.
 //
 // ================================================================================================
 
